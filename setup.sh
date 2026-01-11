@@ -426,26 +426,43 @@ collect_office_config() {
     if ask_yes_no "Collabora Online (Ofis paketi) kurulsun mu?" "n"; then
         INSTALL_COLLABORA="true"
         
-        # Domain ayarı
-        if [ -n "$DOMAIN_NAME" ]; then
-            # Domain'deki noktaları escape et
-            COLLABORA_DOMAIN=$(echo "$DOMAIN_NAME" | sed 's/\./\\\\./g')
-            print_info "Collabora domain: $COLLABORA_DOMAIN"
-        else
-            COLLABORA_DOMAIN="nextcloud"
-        fi
-        
         # Admin şifresi
         COLLABORA_ADMIN_USER="admin"
         COLLABORA_ADMIN_PASSWORD=$(openssl rand -base64 16 2>/dev/null || head -c 16 /dev/urandom | base64)
+        
+        # NPM varsa WOPI ve server_name ayarları
+        if [ "$INSTALL_NPM" = "true" ] && [ -n "$DOMAIN_NAME" ]; then
+            # Collabora server name (office.domain.com formatında)
+            COLLABORA_SERVER_NAME="office.${DOMAIN_NAME#cloud.}"
+            # Eğer domain zaten office ile başlamıyorsa
+            if [[ "$DOMAIN_NAME" == cloud.* ]]; then
+                COLLABORA_SERVER_NAME="office.${DOMAIN_NAME#cloud.}"
+            else
+                COLLABORA_SERVER_NAME="office.$DOMAIN_NAME"
+            fi
+            
+            # WOPI URL (Nextcloud'un public URL'i)
+            COLLABORA_WOPI_URL="https://${DOMAIN_NAME}:443"
+            
+            print_info "Collabora Server: $COLLABORA_SERVER_NAME"
+            print_info "WOPI URL: $COLLABORA_WOPI_URL"
+        else
+            COLLABORA_SERVER_NAME=""
+            COLLABORA_WOPI_URL=""
+        fi
         
         echo ""
         print_info "Collabora kurulduktan sonra:"
         echo "  1. Nextcloud Admin → Apps → 'Nextcloud Office' yükle"
         echo "  2. Admin → Administration Settings → Nextcloud Office"
         echo "  3. 'Use your own server' seç"
-        if [ "$INSTALL_NPM" = "true" ]; then
-            echo "  4. URL: https://$DOMAIN_NAME (NPM proxy ile)"
+        if [ "$INSTALL_NPM" = "true" ] && [ -n "$COLLABORA_SERVER_NAME" ]; then
+            echo "  4. URL: https://$COLLABORA_SERVER_NAME"
+            echo ""
+            print_warning "NPM'de Collabora için ayrı Proxy Host eklemeyi unutmayın!"
+            echo "  - Domain: $COLLABORA_SERVER_NAME"
+            echo "  - Forward: collabora:9980"
+            echo "  - Websockets: Aktif"
         else
             echo "  4. URL: http://SERVER_IP:9980"
         fi
@@ -659,7 +676,8 @@ NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
 
 # ==== Collabora Online (Ofis) ====
 INSTALL_COLLABORA="${INSTALL_COLLABORA:-false}"
-COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-nextcloud}"
+COLLABORA_SERVER_NAME="${COLLABORA_SERVER_NAME:-}"
+COLLABORA_WOPI_URL="${COLLABORA_WOPI_URL:-}"
 COLLABORA_PORT="${COLLABORA_PORT:-9980}"
 COLLABORA_ADMIN_USER="${COLLABORA_ADMIN_USER:-admin}"
 COLLABORA_ADMIN_PASSWORD="${COLLABORA_ADMIN_PASSWORD:-}"
@@ -820,7 +838,8 @@ NPM_HTTPS_PORT="${NPM_HTTPS_PORT:-443}"
 # --------------------------------------------------
 
 INSTALL_COLLABORA="${INSTALL_COLLABORA:-false}"
-COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-nextcloud}"
+COLLABORA_SERVER_NAME="${COLLABORA_SERVER_NAME:-}"
+COLLABORA_WOPI_URL="${COLLABORA_WOPI_URL:-}"
 COLLABORA_PORT="${COLLABORA_PORT:-9980}"
 COLLABORA_ADMIN_USER="${COLLABORA_ADMIN_USER:-admin}"
 COLLABORA_ADMIN_PASSWORD="${COLLABORA_ADMIN_PASSWORD:-}"

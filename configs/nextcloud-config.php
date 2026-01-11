@@ -108,6 +108,15 @@ $CONFIG = array (
   // Trusted proxies (if using reverse proxy)
   'trusted_proxies' => array (
     0 => '172.20.0.0/16',  // Docker network
+    1 => '10.0.0.0/8',     // Private networks
+    2 => '192.168.0.0/16', // Private networks
+    3 => '172.16.0.0/12',  // Private networks
+  ),
+  
+  // Forwarded for headers (for real IP detection behind proxy)
+  'forwarded_for_headers' => array (
+    0 => 'HTTP_X_FORWARDED_FOR',
+    1 => 'HTTP_X_REAL_IP',
   ),
   
   // Brute force protection

@@ -10,8 +10,12 @@
 #   1. Admin → Apps → Office & text → "Nextcloud Office" yükle
 #   2. Admin → Administration Settings → Nextcloud Office
 #   3. "Use your own server" seç
-#   4. URL: https://your-domain.com (NPM üzerinden proxy)
-#      veya http://collabora:9980 (internal)
+#   4. URL: https://office.yourdomain.com (NPM üzerinden)
+#
+# WOPI Protokolü:
+#   - Nextcloud, Collabora'ya dosyaları WOPI üzerinden sunar
+#   - Collabora, WOPI host listesindeki domain'lerden gelen istekleri kabul eder
+#   - NPM arkasında çalışırken aliasgroup ayarları kritiktir
 
 services:
   # ===========================================
@@ -22,30 +26,51 @@ services:
     container_name: collabora
     restart: unless-stopped
     environment:
-      # Nextcloud domain (escape dots with double backslash)
-      # Örnek: cloud.example.com → cloud\\.example\\.com
-      - domain=${COLLABORA_DOMAIN:-nextcloud}
+      # =========================================
+      # WOPI Host Yapılandırması (Kritik!)
+      # =========================================
+      # aliasgroup1: Collabora'nın WOPI isteklerini kabul edeceği Nextcloud URL'leri
+      # - host: Public Nextcloud URL (NPM üzerinden erişilen)
+      # - allow: WOPI isteklerine izin verilen IP/hostname pattern'leri
+      #
+      # Örnek: Nextcloud https://cloud.example.com adresindeyse
+      # aliasgroup1=https://cloud.example.com:443
+      - aliasgroup1=${COLLABORA_WOPI_URL:-https://cloud.example.com:443}
       
-      # Birden fazla domain için (pipe ile ayır)
-      # - domain=cloud\\.example\\.com|office\\.example\\.com
+      # Birden fazla Nextcloud instance varsa (opsiyonel)
+      # - aliasgroup2=https://cloud2.example.com:443
       
-      # SSL'i devre dışı bırak (NPM arkasında çalışacak)
-      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+      # =========================================
+      # Server Yapılandırması
+      # =========================================
+      # server_name: Collabora'nın kendi public URL'i (NPM üzerinden)
+      # Nextcloud bu URL'e bağlanarak doküman düzenleyiciyi yükler
+      - server_name=${COLLABORA_SERVER_NAME:-office.example.com}
       
-      # Admin console (opsiyonel)
+      # =========================================
+      # SSL Ayarları (NPM arkasında)
+      # =========================================
+      # SSL'i devre dışı bırak - NPM SSL termination yapacak
+      # ssl.termination=true: Collabora'ya gelen isteklerin proxy'den geldiğini belirtir
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:net.proto=IPv4 --o:logging.level=warning --o:num_prespawn_children=2
+      
+      # =========================================
+      # Admin Console
+      # =========================================
       - username=${COLLABORA_ADMIN_USER:-admin}
       - password=${COLLABORA_ADMIN_PASSWORD:-}
       
-      # Dil ayarları
-      - dictionaries=tr_TR,en_US,de_DE
+      # =========================================
+      # Lokalizasyon
+      # =========================================
+      - dictionaries=tr_TR,en_US,de_DE,fr_FR
       
-      # Performans ayarları
-      - "extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:num_prespawn_children=2"
     ports:
       # Internal port - NPM üzerinden proxy yapılacak
+      # Production'da bu portu dışarıya açmayın, sadece NPM erişsin
       - "${COLLABORA_PORT:-9980}:9980"
     volumes:
-      # Font desteği (opsiyonel)
+      # Font desteği (opsiyonel - özel fontlar için)
       - collabora-fonts:/opt/collabora/share/fonts/truetype/local:ro
     networks:
       - nextcloud-network

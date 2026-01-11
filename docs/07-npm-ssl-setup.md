@@ -53,7 +53,7 @@ Bu rehber, Nextcloud için Nginx Proxy Manager üzerinden SSL sertifikası yapı
 **Custom Nginx Configuration** alanına aşağıdaki ayarları ekleyin:
 
 ```nginx
-# Nextcloud için gerekli header'lar
+# Gerçek IP adresi iletimi (brute-force koruması için kritik!)
 proxy_set_header Host $host;
 proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -63,14 +63,16 @@ proxy_set_header X-Forwarded-Proto $scheme;
 client_max_body_size 16G;
 proxy_request_buffering off;
 
-# Timeout ayarları
+# Timeout ayarları (büyük dosya transferleri için)
 proxy_connect_timeout 3600;
 proxy_send_timeout 3600;
 proxy_read_timeout 3600;
 
-# WebDAV için
+# WebDAV desteği
 proxy_buffering off;
 ```
+
+> ⚠️ **Kritik:** `X-Real-IP` ve `X-Forwarded-For` header'ları olmadan, Nextcloud tüm istekleri proxy IP'sinden geliyor olarak görür. Bu da brute-force korumasının yanlış çalışmasına ve "multiple invalid login attempts" hatasına neden olur.
 
 ## Adım 4: Nextcloud Yapılandırması
 
@@ -78,18 +80,145 @@ SSL etkinleştirildikten sonra Nextcloud'un bunu bilmesi gerekir:
 
 ```bash
 # Sunucuya SSH ile bağlanın
+
+# HTTPS zorlaması
 docker exec -u www-data nextcloud php occ config:system:set overwrite.cli.url --value="https://cloud.example.com"
 docker exec -u www-data nextcloud php occ config:system:set overwriteprotocol --value="https"
 
-# Trusted proxy ekle (NPM aynı sunucudaysa)
+# Trusted proxies ekle (Docker network aralıkları)
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="172.20.0.0/16"
+docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 1 --value="10.0.0.0/8"
+docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 2 --value="192.168.0.0/16"
+docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 3 --value="172.16.0.0/12"
+
+# Forwarded for headers ayarla (gerçek IP algılama için ÖNEMLİ)
+docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 0 --value="HTTP_X_FORWARDED_FOR"
+docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 1 --value="HTTP_X_REAL_IP"
 ```
 
-## Adım 5: Doğrulama
+> ⚠️ **Önemli:** `forwarded_for_headers` ayarı yapılmazsa Nextcloud gerçek IP adreslerini algılayamaz ve brute-force koruması yanlış çalışır.
+
+## Adım 5: Collabora için Proxy Host ve WOPI Yapılandırması
+
+Collabora Online kullanıyorsanız, WOPI protokolünün düzgün çalışması için doğru yapılandırma kritiktir.
+
+### WOPI Nedir?
+
+WOPI (Web Application Open Platform Interface), Nextcloud ve Collabora arasındaki dosya alışverişini sağlayan protokoldür:
+- Nextcloud → Collabora: "Bu dosyayı düzenle" (WOPI CheckFileInfo, GetFile)
+- Collabora → Nextcloud: "Değişiklikleri kaydet" (WOPI PutFile)
+
+### 5.1 Collabora Environment Ayarları
+
+`.env` dosyasında şu değişkenlerin doğru ayarlandığından emin olun:
+
+```bash
+# Collabora'nın public URL'i (NPM üzerinden erişilen)
+COLLABORA_SERVER_NAME=office.example.com
+
+# Nextcloud'un public URL'i (WOPI istekleri için)
+# Port numarası DAHİL EDİLMELİ!
+COLLABORA_WOPI_URL=https://cloud.example.com:443
+```
+
+### 5.2 NPM Proxy Host Ekleme
+
+1. **Hosts → Proxy Hosts → Add Proxy Host**
+2. **Details sekmesi:**
+   - Domain Names: `office.example.com`
+   - Scheme: `http`
+   - Forward Hostname / IP: `collabora`
+   - Forward Port: `9980`
+   - ✓ **Websockets Support** (zorunlu!)
+3. **SSL sekmesi:**
+   - SSL Certificate: Request a new SSL Certificate
+   - ✓ Force SSL
+   - ✓ HTTP/2 Support
+4. **Advanced sekmesi:**
+   ```nginx
+   # Collabora WOPI için gerekli header'lar
+   proxy_set_header Host $host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
+   
+   # WebSocket desteği (Collabora için zorunlu)
+   proxy_http_version 1.1;
+   proxy_set_header Upgrade $http_upgrade;
+   proxy_set_header Connection "upgrade";
+   
+   # Timeout ayarları (uzun düzenlemeler için)
+   proxy_connect_timeout 3600;
+   proxy_send_timeout 3600;
+   proxy_read_timeout 3600;
+   ```
+
+### 5.3 Nextcloud'da Collabora Ayarları
+
+1. **Nextcloud Office uygulamasını kur:**
+   - Ayarlar → Uygulamalar → Office & text → "Nextcloud Office"
+
+2. **Collabora sunucusunu yapılandır:**
+   - Ayarlar → Yönetim → Nextcloud Office
+   - "Use your own server" seç
+   - URL: `https://office.example.com`
+
+3. **WOPI Doğrulama:**
+   ```bash
+   # Collabora'dan WOPI discovery al
+   curl -s https://office.example.com/hosting/discovery | head -20
+   
+   # Collabora capabilities kontrol
+   curl -s https://office.example.com/hosting/capabilities | jq .
+   ```
+
+### 5.4 WOPI Sorun Giderme
+
+#### "Could not establish connection to the Collabora Online server"
+
+```bash
+# 1. Collabora container çalışıyor mu?
+docker ps | grep collabora
+
+# 2. NPM'den Collabora'ya erişim var mı?
+docker exec nginx-proxy-manager curl -I http://collabora:9980/hosting/discovery
+
+# 3. WOPI URL doğru mu?
+docker logs collabora 2>&1 | grep -i "aliasgroup\|wopi"
+```
+
+#### "WOPI host did not respond"
+
+```bash
+# Collabora'dan Nextcloud'a erişim test et
+docker exec collabora curl -kI https://cloud.example.com
+
+# DNS çözümlemesi
+docker exec collabora nslookup cloud.example.com
+```
+
+#### Doküman açılıyor ama kaydedilmiyor
+
+WebSocket bağlantısı kopuyor olabilir:
+1. NPM'de "Websockets Support" aktif mi?
+2. Advanced ayarlarda `proxy_http_version 1.1` ve `Upgrade` header'ları var mı?
+
+## Adım 6: Doğrulama
 
 1. `https://cloud.example.com` adresine gidin
 2. Tarayıcıda kilit simgesine tıklayın
 3. Sertifika bilgilerini kontrol edin (Let's Encrypt olmalı)
+
+### IP Algılama Testi
+
+Gerçek IP'nizin doğru algılandığını test edin:
+
+```bash
+# Nextcloud loglarından giriş denemelerini kontrol edin
+docker exec nextcloud tail -f /var/www/html/data/nextcloud.log | grep -i "login"
+```
+
+Log'da kendi gerçek IP adresinizi görmelisiniz, proxy IP'sini (172.x.x.x) değil.
 
 ## Sorun Giderme
 
@@ -127,6 +256,46 @@ Nextcloud config'de HTTPS zorlamasını etkinleştirin:
 ```bash
 docker exec -u www-data nextcloud php occ config:system:set overwriteprotocol --value="https"
 ```
+
+### "Multiple Invalid Login Attempts" Hatası
+
+Bu hata, Nextcloud'un gerçek IP adresini algılayamamasından kaynaklanır. Tüm istekler proxy IP'sinden geliyor gibi görünür.
+
+**Çözüm:**
+
+1. NPM'de Advanced ayarlarında şu header'ların olduğundan emin olun:
+   ```nginx
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   ```
+
+2. Nextcloud'da forwarded_for_headers ayarlayın:
+   ```bash
+   docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 0 --value="HTTP_X_FORWARDED_FOR"
+   docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 1 --value="HTTP_X_REAL_IP"
+   ```
+
+3. Trusted proxies'i genişletin:
+   ```bash
+   docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="172.20.0.0/16"
+   docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 1 --value="10.0.0.0/8"
+   docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 2 --value="192.168.0.0/16"
+   docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 3 --value="172.16.0.0/12"
+   ```
+
+4. Mevcut engelleri temizleyin:
+   ```bash
+   # Belirli IP için
+   docker exec -u www-data nextcloud php occ security:bruteforce:reset SENIN_IP_ADRESIN
+   
+   # Tüm engeller için
+   docker exec -u www-data nextcloud php occ security:bruteforce:reset all
+   ```
+
+5. Container'ları yeniden başlatın:
+   ```bash
+   docker compose restart nginx nextcloud
+   ```
 
 ## Yedek SSL Sertifikası (Opsiyonel)
 

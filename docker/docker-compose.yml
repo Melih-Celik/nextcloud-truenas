@@ -32,7 +32,7 @@ services:
   # NEXTCLOUD APPLICATION
   # ===========================================
   nextcloud:
-    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm-alpine}
+    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm}
     container_name: nextcloud
     restart: unless-stopped
     environment:
@@ -152,7 +152,7 @@ services:
   # CRON (Background Jobs)
   # ===========================================
   cron:
-    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm-alpine}
+    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm}
     container_name: nextcloud-cron
     restart: unless-stopped
     entrypoint: /cron.sh

@@ -52,45 +52,99 @@ fi
 echo -e "${GREEN}All pre-flight checks passed!${NC}"
 
 # ==================================================
-# Check Project Directory
+# Copy Docker Files to Project Directory
 # ==================================================
-echo -e "\n${YELLOW}[2/7] Checking project directory...${NC}"
+echo -e "\n${YELLOW}[2/8] Copying Docker files to $PROJECT_DIR...${NC}"
 
-cd $PROJECT_DIR
+# Find the docker directory (relative to this script)
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_DIR="$REPO_DIR/docker"
 
-if [ ! -f "docker-compose.yml" ]; then
-    echo -e "${RED}docker-compose.yml not found in $PROJECT_DIR${NC}"
-    echo "Please copy the docker files first."
+if [ ! -d "$DOCKER_DIR" ]; then
+    echo -e "${RED}Docker files not found at $DOCKER_DIR${NC}"
     exit 1
 fi
 
+# Create project directory if it doesn't exist
+sudo mkdir -p "$PROJECT_DIR"
+sudo chown $(whoami):$(whoami) "$PROJECT_DIR"
+
+# Copy docker-compose.yml
+cp "$DOCKER_DIR/docker-compose.yml" "$PROJECT_DIR/"
+echo "  Copied docker-compose.yml"
+
+# Copy configs directory
+mkdir -p "$PROJECT_DIR/configs"
+cp -r "$DOCKER_DIR/configs/"* "$PROJECT_DIR/configs/" 2>/dev/null || true
+echo "  Copied configs/"
+
+# Create necessary directories
+mkdir -p "$PROJECT_DIR/db-data"
+mkdir -p "$PROJECT_DIR/redis-data"
+mkdir -p "$PROJECT_DIR/ssl"
+
+echo -e "${GREEN}Docker files copied${NC}"
+
+# ==================================================
+# Configure Environment
+# ==================================================
+echo -e "\n${YELLOW}[3/8] Configuring environment...${NC}"
+
+cd "$PROJECT_DIR"
+
+# Create .env if it doesn't exist
 if [ ! -f ".env" ]; then
-    if [ -f ".env.example" ]; then
-        echo -e "${YELLOW}Creating .env from .env.example...${NC}"
-        cp .env.example .env
-        echo -e "${RED}Please edit .env file with your settings and run again.${NC}"
-        echo "  nano $PROJECT_DIR/.env"
-        exit 1
+    if [ -f "$DOCKER_DIR/.env.example" ]; then
+        cp "$DOCKER_DIR/.env.example" "$PROJECT_DIR/.env"
+        echo "  Created .env from template"
+        
+        # Generate random passwords
+        POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+        REDIS_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+        NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)
+        
+        # Replace placeholder passwords
+        sed -i "s/POSTGRES_PASSWORD=CHANGE_ME/POSTGRES_PASSWORD=$POSTGRES_PASSWORD/" "$PROJECT_DIR/.env"
+        sed -i "s/REDIS_PASSWORD=CHANGE_ME/REDIS_PASSWORD=$REDIS_PASSWORD/" "$PROJECT_DIR/.env"
+        sed -i "s/NEXTCLOUD_ADMIN_PASSWORD=CHANGE_ME/NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD/" "$PROJECT_DIR/.env"
+        
+        echo -e "${GREEN}  Generated random passwords${NC}"
+        echo ""
+        echo -e "${YELLOW}  IMPORTANT: Save these credentials!${NC}"
+        echo "  PostgreSQL Password: $POSTGRES_PASSWORD"
+        echo "  Redis Password: $REDIS_PASSWORD"
+        echo "  Nextcloud Admin Password: $NEXTCLOUD_ADMIN_PASSWORD"
+        echo ""
+        echo "  Credentials saved in: $PROJECT_DIR/.env"
     else
-        echo -e "${RED}.env file not found${NC}"
+        echo -e "${RED}.env.example not found${NC}"
         exit 1
     fi
+else
+    echo "  .env file already exists"
 fi
 
-# Check for default passwords
-if grep -q "CHANGE_ME" .env; then
-    echo -e "${RED}Please update the passwords in .env file!${NC}"
-    echo "Found 'CHANGE_ME' placeholder. Edit the file:"
-    echo "  nano $PROJECT_DIR/.env"
-    exit 1
+# Verify no CHANGE_ME placeholders remain
+if grep -q "CHANGE_ME" "$PROJECT_DIR/.env"; then
+    echo -e "${YELLOW}Found 'CHANGE_ME' in .env, generating replacement...${NC}"
+    
+    POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    REDIS_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)
+    
+    sed -i "s/POSTGRES_PASSWORD=CHANGE_ME/POSTGRES_PASSWORD=$POSTGRES_PASSWORD/" "$PROJECT_DIR/.env"
+    sed -i "s/REDIS_PASSWORD=CHANGE_ME/REDIS_PASSWORD=$REDIS_PASSWORD/" "$PROJECT_DIR/.env"
+    sed -i "s/NEXTCLOUD_ADMIN_PASSWORD=CHANGE_ME/NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD/" "$PROJECT_DIR/.env"
+    
+    echo -e "${GREEN}  Passwords updated${NC}"
 fi
 
-echo -e "${GREEN}Project directory ready${NC}"
+echo -e "${GREEN}Environment configured${NC}"
 
 # ==================================================
 # Set Permissions
 # ==================================================
-echo -e "\n${YELLOW}[3/7] Setting permissions...${NC}"
+echo -e "\n${YELLOW}[4/8] Setting permissions...${NC}"
 
 # www-data UID:GID is typically 33:33
 WWW_DATA_UID=33
@@ -111,7 +165,7 @@ echo -e "${GREEN}Permissions set${NC}"
 # ==================================================
 # Create SSL Certificates (Self-signed for initial setup)
 # ==================================================
-echo -e "\n${YELLOW}[4/7] Checking SSL certificates...${NC}"
+echo -e "\n${YELLOW}[5/8] Checking SSL certificates...${NC}"
 
 if [ ! -f "ssl/fullchain.pem" ] || [ ! -f "ssl/privkey.pem" ]; then
     echo "Creating self-signed certificates for initial setup..."
@@ -132,7 +186,7 @@ fi
 # ==================================================
 # Pull Docker Images
 # ==================================================
-echo -e "\n${YELLOW}[5/7] Pulling Docker images...${NC}"
+echo -e "\n${YELLOW}[6/8] Pulling Docker images...${NC}"
 
 docker compose pull
 
@@ -141,7 +195,7 @@ echo -e "${GREEN}Images pulled successfully${NC}"
 # ==================================================
 # Start Services
 # ==================================================
-echo -e "\n${YELLOW}[6/7] Starting services...${NC}"
+echo -e "\n${YELLOW}[7/8] Starting services...${NC}"
 
 docker compose up -d
 
@@ -150,7 +204,7 @@ echo -e "${GREEN}Services started${NC}"
 # ==================================================
 # Wait for Services
 # ==================================================
-echo -e "\n${YELLOW}[7/7] Waiting for services to be ready...${NC}"
+echo -e "\n${YELLOW}[8/8] Waiting for services to be ready...${NC}"
 
 echo "Waiting for PostgreSQL..."
 until docker exec postgres pg_isready -U nextcloud -d nextcloud &>/dev/null; do

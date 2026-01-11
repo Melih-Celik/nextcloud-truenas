@@ -84,6 +84,18 @@ sudo chown $(whoami):$(whoami) "$PROJECT_DIR"
 cp "$DOCKER_DIR/docker-compose.yml" "$PROJECT_DIR/"
 echo "  Copied docker-compose.yml"
 
+# Copy NPM compose file if NPM is configured
+if [ "${INSTALL_NPM:-false}" = "true" ] && [ -f "$DOCKER_DIR/docker-compose.npm.yml" ]; then
+    cp "$DOCKER_DIR/docker-compose.npm.yml" "$PROJECT_DIR/"
+    echo "  Copied docker-compose.npm.yml (NPM enabled)"
+fi
+
+# Copy Collabora compose file if configured
+if [ "${INSTALL_COLLABORA:-false}" = "true" ] && [ -f "$DOCKER_DIR/docker-compose.collabora.yml" ]; then
+    cp "$DOCKER_DIR/docker-compose.collabora.yml" "$PROJECT_DIR/"
+    echo "  Copied docker-compose.collabora.yml (Collabora enabled)"
+fi
+
 # Copy override file if exists
 if [ -f "$DOCKER_DIR/docker-compose.override.yml" ]; then
     cp "$DOCKER_DIR/docker-compose.override.yml" "$PROJECT_DIR/"
@@ -230,6 +242,18 @@ echo -e "\n${YELLOW}[5/6] Pulling Docker images...${NC}"
 
 docker compose pull
 
+# Pull NPM image if needed
+if [ "${INSTALL_NPM:-false}" = "true" ]; then
+    echo "Pulling Nginx Proxy Manager image..."
+    docker compose -f docker-compose.yml -f docker-compose.npm.yml pull npm 2>/dev/null || true
+fi
+
+# Pull Collabora image if needed
+if [ "${INSTALL_COLLABORA:-false}" = "true" ]; then
+    echo "Pulling Collabora Online image..."
+    docker compose -f docker-compose.yml -f docker-compose.collabora.yml pull collabora 2>/dev/null || true
+fi
+
 echo -e "${GREEN}Images pulled successfully${NC}"
 
 # ==================================================
@@ -237,7 +261,26 @@ echo -e "${GREEN}Images pulled successfully${NC}"
 # ==================================================
 echo -e "\n${YELLOW}[6/6] Starting services...${NC}"
 
+# Start main services
 docker compose up -d
+
+# Start NPM if configured
+if [ "${INSTALL_NPM:-false}" = "true" ]; then
+    echo "Starting Nginx Proxy Manager..."
+    if [ -f "$PROJECT_DIR/docker-compose.npm.yml" ]; then
+        docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d npm
+        echo -e "${GREEN}NPM started on port ${NPM_ADMIN_PORT:-81}${NC}"
+    fi
+fi
+
+# Start Collabora if configured
+if [ "${INSTALL_COLLABORA:-false}" = "true" ]; then
+    echo "Starting Collabora Online (Office Suite)..."
+    if [ -f "$PROJECT_DIR/docker-compose.collabora.yml" ]; then
+        docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d collabora
+        echo -e "${GREEN}Collabora started on port ${COLLABORA_PORT:-9980}${NC}"
+    fi
+fi
 
 echo -e "${GREEN}Services started${NC}"
 
@@ -325,7 +368,46 @@ echo "Services status:"
 docker compose ps
 echo ""
 echo "Access Nextcloud:"
-echo "  http://$(hostname -I | awk '{print $1}')"
+SERVER_IP=$(hostname -I | awk '{print $1}')
+if [ "${INSTALL_NPM:-false}" = "true" ]; then
+    echo "  Internal (Nextcloud nginx): http://${SERVER_IP}:${NGINX_HTTP_PORT:-8080}"
+    echo ""
+    echo -e "${YELLOW}Nginx Proxy Manager:${NC}"
+    echo "  Admin Panel: http://${SERVER_IP}:${NPM_ADMIN_PORT:-81}"
+    echo "  Default login: admin@example.com / changeme"
+    echo "  After login, add Proxy Host:"
+    echo "    - Domain: your-domain.com"
+    echo "    - Scheme: http"
+    echo "    - Forward Hostname/IP: nginx"
+    echo "    - Forward Port: 80"
+    echo "    - Enable SSL with Let's Encrypt"
+else
+    echo "  http://${SERVER_IP}:${NGINX_HTTP_PORT:-80}"
+fi
+
+# Show Collabora info if installed
+if [ "${INSTALL_COLLABORA:-false}" = "true" ]; then
+    echo ""
+    echo -e "${YELLOW}Collabora Online (Office Suite):${NC}"
+    echo "  Internal URL: http://${SERVER_IP}:${COLLABORA_PORT:-9980}"
+    echo ""
+    echo "  To configure in Nextcloud:"
+    echo "    1. Go to Settings → Administration → Office"
+    echo "    2. Select 'Use your own server'"
+    if [ "${INSTALL_NPM:-false}" = "true" ]; then
+        echo "    3. Enter: https://office.${NEXTCLOUD_DOMAIN:-yourdomain.com}"
+        echo ""
+        echo "  Add Collabora to NPM:"
+        echo "    - Domain: office.${NEXTCLOUD_DOMAIN:-yourdomain.com}"
+        echo "    - Scheme: http"
+        echo "    - Forward Hostname/IP: collabora"
+        echo "    - Forward Port: 9980"
+        echo "    - Enable SSL with Let's Encrypt"
+        echo "    - Enable 'Websockets Support'"
+    else
+        echo "    3. Enter: http://${SERVER_IP}:${COLLABORA_PORT:-9980}"
+    fi
+fi
 echo ""
 echo "Default admin credentials are in .env file:"
 echo "  cat $PROJECT_DIR/.env"
@@ -334,8 +416,21 @@ echo "Useful commands:"
 echo "  View logs:     cd $PROJECT_DIR && docker compose logs -f"
 echo "  Stop:          cd $PROJECT_DIR && docker compose down"
 echo "  Restart:       cd $PROJECT_DIR && docker compose restart"
-echo "  Update:        cd $PROJECT_DIR && docker compose pull && docker compose up -d"
+
+# Show update command based on what's installed
+UPDATE_CMD="docker compose pull && docker compose up -d"
+if [ "${INSTALL_NPM:-false}" = "true" ] && [ "${INSTALL_COLLABORA:-false}" = "true" ]; then
+    UPDATE_CMD="docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml pull && docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml up -d"
+elif [ "${INSTALL_NPM:-false}" = "true" ]; then
+    UPDATE_CMD="docker compose -f docker-compose.yml -f docker-compose.npm.yml pull && docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d"
+elif [ "${INSTALL_COLLABORA:-false}" = "true" ]; then
+    UPDATE_CMD="docker compose -f docker-compose.yml -f docker-compose.collabora.yml pull && docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d"
+fi
+echo "  Update:       cd $PROJECT_DIR && $UPDATE_CMD"
+
+if [ "${INSTALL_NPM:-false}" != "true" ]; then
 echo ""
 echo -e "${YELLOW}For external access with SSL:${NC}"
 echo "  Use Nginx Proxy Manager or similar reverse proxy"
-echo "  Point it to this server's IP on port 80"
+echo "  Point it to this server's IP on port ${NGINX_HTTP_PORT:-80}"
+fi

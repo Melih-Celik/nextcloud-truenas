@@ -244,18 +244,23 @@ collect_proxy_config() {
             
             if [ "$npm_choice" = "1" ]; then
                 INSTALL_NPM="true"
+                # NPM 80/443 kullanacak, Nextcloud nginx 8080'de dinleyecek
+                NGINX_HTTP_PORT="8080"
                 ask_input "NPM Admin Panel portu" "81" NPM_ADMIN_PORT
                 ask_input "NPM HTTP portu" "80" NPM_HTTP_PORT
                 ask_input "NPM HTTPS portu" "443" NPM_HTTPS_PORT
                 echo ""
+                print_info "Nextcloud nginx portu: 8080 (NPM uzerinden proxy yapilacak)"
                 print_info "NPM kurulduktan sonra SSL ayarlarini NPM arayuzunden yapmaniz gerekecek."
                 print_info "Detaylar icin: docs/07-npm-ssl-setup.md"
             else
                 INSTALL_NPM="false"
+                # Harici NPM kullaniliyorsa, Nextcloud nginx default 80'de
+                NGINX_HTTP_PORT="80"
                 ask_input "Mevcut NPM sunucu adresi (IP veya hostname)" "" NPM_HOST
                 echo ""
                 print_info "NPM'de bu sunucu icin proxy host eklemeniz gerekecek."
-                print_info "Hedef: http://$NEXTCLOUD_SERVER_IP:80"
+                print_info "Hedef: http://$NEXTCLOUD_SERVER_IP:${NGINX_HTTP_PORT}"
             fi
             ;;
         3)
@@ -410,6 +415,45 @@ collect_email_config() {
     fi
     
     print_success "E-posta yapılandırması tamamlandı"
+}
+
+collect_office_config() {
+    print_section "📝 Ofis Entegrasyonu (Opsiyonel)"
+    
+    echo "Collabora Online, tarayıcıda Word/Excel/PowerPoint düzenleme sağlar."
+    echo ""
+    
+    if ask_yes_no "Collabora Online (Ofis paketi) kurulsun mu?" "n"; then
+        INSTALL_COLLABORA="true"
+        
+        # Domain ayarı
+        if [ -n "$DOMAIN_NAME" ]; then
+            # Domain'deki noktaları escape et
+            COLLABORA_DOMAIN=$(echo "$DOMAIN_NAME" | sed 's/\./\\\\./g')
+            print_info "Collabora domain: $COLLABORA_DOMAIN"
+        else
+            COLLABORA_DOMAIN="nextcloud"
+        fi
+        
+        # Admin şifresi
+        COLLABORA_ADMIN_USER="admin"
+        COLLABORA_ADMIN_PASSWORD=$(openssl rand -base64 16 2>/dev/null || head -c 16 /dev/urandom | base64)
+        
+        echo ""
+        print_info "Collabora kurulduktan sonra:"
+        echo "  1. Nextcloud Admin → Apps → 'Nextcloud Office' yükle"
+        echo "  2. Admin → Administration Settings → Nextcloud Office"
+        echo "  3. 'Use your own server' seç"
+        if [ "$INSTALL_NPM" = "true" ]; then
+            echo "  4. URL: https://$DOMAIN_NAME (NPM proxy ile)"
+        else
+            echo "  4. URL: http://SERVER_IP:9980"
+        fi
+    else
+        INSTALL_COLLABORA="false"
+    fi
+    
+    print_success "Ofis yapılandırması tamamlandı"
 }
 
 collect_security_config() {
@@ -608,6 +652,17 @@ NPM_ADMIN_PORT="${NPM_ADMIN_PORT:-81}"
 NPM_HTTP_PORT="${NPM_HTTP_PORT:-80}"
 NPM_HTTPS_PORT="${NPM_HTTPS_PORT:-443}"
 PROXY_TRUSTED_NETWORK="${PROXY_TRUSTED_NETWORK:-172.20.0.0/16}"
+
+# ==== Nginx Port ====
+# NPM ayni sunucudaysa 8080, degilse 80
+NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
+
+# ==== Collabora Online (Ofis) ====
+INSTALL_COLLABORA="${INSTALL_COLLABORA:-false}"
+COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-nextcloud}"
+COLLABORA_PORT="${COLLABORA_PORT:-9980}"
+COLLABORA_ADMIN_USER="${COLLABORA_ADMIN_USER:-admin}"
+COLLABORA_ADMIN_PASSWORD="${COLLABORA_ADMIN_PASSWORD:-}"
 
 # ==== Depolama ====
 NFS_BASE_EXPORT="${NFS_BASE_EXPORT:-/mnt/storage/nextcloud}"
@@ -986,6 +1041,7 @@ run_config_collection() {
     collect_nextcloud_config
     collect_database_config
     collect_email_config
+    collect_office_config
     collect_security_config
     collect_backup_config
     collect_advanced_config

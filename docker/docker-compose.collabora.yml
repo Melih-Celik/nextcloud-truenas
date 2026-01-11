@@ -1,0 +1,69 @@
+# Collabora Online (Office) Docker Compose Override
+# 
+# LibreOffice tabanlı online ofis paketi
+# Word, Excel, PowerPoint dosyalarını tarayıcıda düzenleme
+#
+# Kullanım:
+#   docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d
+#
+# Nextcloud'da etkinleştirme:
+#   1. Admin → Apps → Office & text → "Nextcloud Office" yükle
+#   2. Admin → Administration Settings → Nextcloud Office
+#   3. "Use your own server" seç
+#   4. URL: https://your-domain.com (NPM üzerinden proxy)
+#      veya http://collabora:9980 (internal)
+
+services:
+  # ===========================================
+  # COLLABORA ONLINE (CODE)
+  # ===========================================
+  collabora:
+    image: collabora/code:latest
+    container_name: collabora
+    restart: unless-stopped
+    environment:
+      # Nextcloud domain (escape dots with double backslash)
+      # Örnek: cloud.example.com → cloud\\.example\\.com
+      - domain=${COLLABORA_DOMAIN:-nextcloud}
+      
+      # Birden fazla domain için (pipe ile ayır)
+      # - domain=cloud\\.example\\.com|office\\.example\\.com
+      
+      # SSL'i devre dışı bırak (NPM arkasında çalışacak)
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+      
+      # Admin console (opsiyonel)
+      - username=${COLLABORA_ADMIN_USER:-admin}
+      - password=${COLLABORA_ADMIN_PASSWORD:-}
+      
+      # Dil ayarları
+      - dictionaries=tr_TR,en_US,de_DE
+      
+      # Performans ayarları
+      - "extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:num_prespawn_children=2"
+    ports:
+      # Internal port - NPM üzerinden proxy yapılacak
+      - "${COLLABORA_PORT:-9980}:9980"
+    volumes:
+      # Font desteği (opsiyonel)
+      - collabora-fonts:/opt/collabora/share/fonts/truetype/local:ro
+    networks:
+      - nextcloud-network
+    cap_add:
+      - MKNOD
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9980/hosting/discovery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+volumes:
+  collabora-fonts:
+    driver: local

@@ -32,7 +32,7 @@ services:
   # NEXTCLOUD APPLICATION
   # ===========================================
   nextcloud:
-    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm}
+    image: nextcloud:${NEXTCLOUD_TAG:-stable-fpm}
     container_name: nextcloud
     restart: unless-stopped
     environment:
@@ -56,6 +56,9 @@ services:
       # PHP settings
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-1024M}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-16G}
+      
+      # Default phone region for validation
+      - DEFAULT_PHONE_REGION=${DEFAULT_PHONE_REGION:-TR}
     volumes:
       # Nextcloud config (NFS from TrueNAS)
       - ${NFS_CONFIG_MOUNT:-/mnt/nextcloud/config}:/var/www/html/config
@@ -68,6 +71,10 @@ services:
       
       # Custom PHP config
       - ./configs/php/custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+      
+      # Entrypoint hooks for automatic configuration
+      - ./configs/nextcloud/hooks/before-starting:/docker-entrypoint-hooks.d/before-starting:ro
+      - ./configs/nextcloud/hooks/post-installation:/docker-entrypoint-hooks.d/post-installation:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -152,7 +159,7 @@ services:
   # CRON (Background Jobs)
   # ===========================================
   cron:
-    image: nextcloud:${NEXTCLOUD_TAG:-29-fpm}
+    image: nextcloud:${NEXTCLOUD_TAG:-stable-fpm}
     container_name: nextcloud-cron
     restart: unless-stopped
     entrypoint: /cron.sh

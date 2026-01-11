@@ -470,7 +470,8 @@ collect_advanced_config() {
     
     if ask_yes_no "Gelişmiş ayarları yapılandırmak ister misiniz?" "n"; then
         # Nextcloud version (Debian-based for TrueNAS UID 33 compatibility)
-        ask_input "Nextcloud Docker tag" "29-fpm" NEXTCLOUD_TAG
+        # Options: stable-fpm (recommended), 32-fpm, 31-fpm
+        ask_input "Nextcloud Docker tag" "stable-fpm" NEXTCLOUD_TAG
         
         # PostgreSQL version
         ask_input "PostgreSQL Docker tag" "16-alpine" POSTGRES_TAG
@@ -484,7 +485,7 @@ collect_advanced_config() {
         # Phone region
         ask_input "Varsayılan telefon bölgesi (ISO 3166-1)" "TR" DEFAULT_PHONE_REGION
     else
-        NEXTCLOUD_TAG="29-fpm"
+        NEXTCLOUD_TAG="stable-fpm"
         POSTGRES_TAG="16-alpine"
         REDIS_TAG="7-alpine"
         TIMEZONE="Europe/Istanbul"
@@ -628,7 +629,7 @@ NEXTCLOUD_ADMIN_USER="$NEXTCLOUD_ADMIN_USER"
 NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
 PHP_MEMORY_LIMIT="$PHP_MEMORY_LIMIT"
 PHP_UPLOAD_LIMIT="$PHP_UPLOAD_LIMIT"
-NEXTCLOUD_TAG="${NEXTCLOUD_TAG:-29-fpm}"
+NEXTCLOUD_TAG="${NEXTCLOUD_TAG:-stable-fpm}"
 
 # ==== Veritabanı ====
 POSTGRES_DB="$POSTGRES_DB"

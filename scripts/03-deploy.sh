@@ -90,10 +90,13 @@ if [ -f "$DOCKER_DIR/docker-compose.override.yml" ]; then
     echo "  Copied docker-compose.override.yml"
 fi
 
-# Copy configs directory
+# Copy configs directory (preserve permissions for hook scripts)
 mkdir -p "$PROJECT_DIR/configs"
-cp -r "$DOCKER_DIR/configs/"* "$PROJECT_DIR/configs/" 2>/dev/null || true
+cp -rp "$DOCKER_DIR/configs/"* "$PROJECT_DIR/configs/" 2>/dev/null || true
 echo "  Copied configs/"
+
+# Ensure hook scripts are executable
+find "$PROJECT_DIR/configs/nextcloud/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Create necessary directories
 mkdir -p "$PROJECT_DIR/db-data"

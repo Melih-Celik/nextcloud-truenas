@@ -26,15 +26,19 @@ Bu rehber, Nextcloud için Nginx Proxy Manager üzerinden SSL sertifikası yapı
 
 ### Details Sekmesi
 
-| Alan | Değer |
-|------|-------|
-| Domain Names | `cloud.example.com` (kendi domain'iniz) |
-| Scheme | `http` |
-| Forward Hostname / IP | `nextcloud` (Docker network) veya `SUNUCU_IP` |
-| Forward Port | `80` |
-| Cache Assets | ✅ |
-| Block Common Exploits | ✅ |
-| Websockets Support | ✅ |
+| Alan | NPM Aynı Makinede | NPM Ayrı Makinede |
+|------|-------------------|-------------------|
+| Domain Names | `cloud.example.com` | `cloud.example.com` |
+| Scheme | `http` | `http` |
+| Forward Hostname / IP | `nginx` (Docker network) | Nextcloud sunucu IP (örn: `192.168.1.10`) |
+| Forward Port | `8080` | `80` |
+| Cache Assets | ✅ | ✅ |
+| Block Common Exploits | ✅ | ✅ |
+| Websockets Support | ✅ | ✅ |
+
+> **📍 Port Farkı:**
+> - **NPM aynı makinede:** Nextcloud nginx `8080`'de çalışır (NPM 80/443 kullandığı için)
+> - **NPM ayrı makinede:** Nextcloud nginx `80`'de çalışır
 
 ### SSL Sekmesi
 
@@ -85,8 +89,15 @@ SSL etkinleştirildikten sonra Nextcloud'un bunu bilmesi gerekir:
 docker exec -u www-data nextcloud php occ config:system:set overwrite.cli.url --value="https://cloud.example.com"
 docker exec -u www-data nextcloud php occ config:system:set overwriteprotocol --value="https"
 
-# Trusted proxies ekle (Docker network aralıkları)
+# === Trusted Proxies Ayarları ===
+
+# NPM AYNI MAKİNEDE ise (Docker network):
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="172.20.0.0/16"
+
+# NPM AYRI MAKİNEDE ise (NPM sunucusunun IP'sini ekle):
+# docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="NPM_SUNUCU_IP"
+
+# Genel private network aralıkları (her iki durumda da eklenebilir):
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 1 --value="10.0.0.0/8"
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 2 --value="192.168.0.0/16"
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 3 --value="172.16.0.0/12"
@@ -127,7 +138,9 @@ COLLABORA_WOPI_URL=https://cloud.example.com:443
 2. **Details sekmesi:**
    - Domain Names: `office.example.com`
    - Scheme: `http`
-   - Forward Hostname / IP: `collabora`
+   - Forward Hostname / IP:
+     - **NPM aynı makinede:** `collabora` (Docker network)
+     - **NPM ayrı makinede:** Nextcloud sunucu IP (örn: `192.168.1.10`)
    - Forward Port: `9980`
    - ✓ **Websockets Support** (zorunlu!)
 3. **SSL sekmesi:**
@@ -152,6 +165,10 @@ COLLABORA_WOPI_URL=https://cloud.example.com:443
    proxy_send_timeout 3600;
    proxy_read_timeout 3600;
    ```
+
+> **📍 NPM Ayrı Makinede İse:**
+> - Nextcloud sunucusunda `9980` portunu firewall'da açın
+> - Veya Collabora sadece localhost'tan erişilebilir olsun, NPM'i de aynı makinede çalıştırın
 
 ### 5.3 Nextcloud'da Collabora Ayarları
 

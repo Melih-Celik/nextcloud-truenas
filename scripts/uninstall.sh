@@ -106,7 +106,7 @@ case $choice in
             fi
         else
             # Try to stop by container names
-            docker stop nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager 2>/dev/null || true
+            docker stop nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager collabora 2>/dev/null || true
             print_success "Container'lar durduruldu"
         fi
         
@@ -141,10 +141,10 @@ case $choice in
         fi
         
         # Remove by name if compose didn't work
-        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager 2>/dev/null || true
+        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager collabora 2>/dev/null || true
         
         # Remove volumes
-        docker volume rm nextcloud-app npm-data npm-letsencrypt 2>/dev/null || true
+        docker volume rm nextcloud-app npm-data npm-letsencrypt collabora-fonts postgres-data 2>/dev/null || true
         
         print_success "Container ve volume'lar silindi"
         
@@ -186,8 +186,8 @@ case $choice in
             cd "$PROJECT_DIR" 2>/dev/null
             docker compose down -v 2>/dev/null || true
         fi
-        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager 2>/dev/null || true
-        docker volume rm nextcloud-app npm-data npm-letsencrypt 2>/dev/null || true
+        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager collabora 2>/dev/null || true
+        docker volume rm nextcloud-app npm-data npm-letsencrypt collabora-fonts postgres-data 2>/dev/null || true
         print_success "Container'lar kaldirildi"
         
         # Unmount NFS
@@ -271,8 +271,8 @@ case $choice in
             cd "$PROJECT_DIR" 2>/dev/null
             docker compose down -v 2>/dev/null || true
         fi
-        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager 2>/dev/null || true
-        docker volume rm nextcloud-app npm-data npm-letsencrypt 2>/dev/null || true
+        docker rm -f nextcloud nginx postgres redis nextcloud-cron nginx-proxy-manager collabora 2>/dev/null || true
+        docker volume rm nextcloud-app npm-data npm-letsencrypt collabora-fonts postgres-data 2>/dev/null || true
         
         # Delete data on NFS mounts
         print_error "NFS mount'larindaki veriler siliniyor..."

@@ -258,281 +258,127 @@ docker stats
 
 Collabora Online, tarayıcı içinde Word, Excel ve PowerPoint dosyalarını düzenlemenizi sağlar.
 
-### WOPI Protokolü
+### Collabora Kurulumu
 
-Collabora ve Nextcloud arasındaki iletişim WOPI (Web Application Open Platform Interface) protokolü üzerinden gerçekleşir:
-
-```
-┌─────────────────┐         WOPI          ┌─────────────────┐
-│                 │ ◄──────────────────── │                 │
-│    Nextcloud    │   (dosya erişimi)     │    Collabora    │
-│  cloud.x.com    │ ────────────────────► │  office.x.com   │
-│                 │    (düzenleme UI)     │                 │
-└─────────────────┘                       └─────────────────┘
-         │                                         │
-         └──────────────┬──────────────────────────┘
-                        │
-                        ▼
-              ┌─────────────────┐
-              │   NPM (SSL)     │
-              │   :80, :443     │
-              └─────────────────┘
-                        │
-                        ▼
-                    İNTERNET
-```
-
-### Collabora Yapılandırması
-
-#### 1. Environment Değişkenleri (.env)
+#### 1. .env Dosyasını Düzenle
 
 ```bash
-# Collabora'nın public URL'i (NPM üzerinden)
+# Collabora'nın public URL'i (sadece hostname, https:// OLMADAN)
 COLLABORA_SERVER_NAME=office.yourdomain.com
 
-# Nextcloud'un public URL'i (WOPI istekleri için)
-# Port numarası dahil edilmeli (HTTPS=443, HTTP=80)
+# Nextcloud'un public URL'i (port DAHİL)
 COLLABORA_WOPI_URL=https://cloud.yourdomain.com:443
-
-# Admin panel credentials
-COLLABORA_ADMIN_USER=admin
-COLLABORA_ADMIN_PASSWORD=güçlü-şifre
 ```
 
-#### 2. Nextcloud'da Aktifleştirme
-
-1. **Nextcloud Office uygulamasını kur:**
-   - Ayarlar → Uygulamalar → Office & text → "Nextcloud Office" yükle
-
-2. **Collabora sunucusunu yapılandır:**
-   - Ayarlar → Yönetim → Nextcloud Office
-   - "Use your own server" seç
-   - URL: `https://office.yourdomain.com`
-   - ✅ Disable certificate verification (self-signed için)
-
-3. **WOPI allowlist kontrolü (opsiyonel):**
-   ```bash
-   docker exec -u www-data nextcloud php occ config:app:get richdocuments wopi_allowlist
-   ```
-
-#### 3. NPM Proxy Host (Collabora için)
-
-1. **Hosts → Proxy Hosts → Add Proxy Host**
-2. **Details sekmesi:**
-   - Domain Names: `office.yourdomain.com`
-   - Scheme: `http`
-   - Forward Hostname / IP: `collabora`
-   - Forward Port: `9980`
-   - ✓ **Websockets Support** (zorunlu!)
-3. **SSL sekmesi:**
-   - SSL Certificate: Request a new SSL Certificate
-   - ✓ Force SSL
-   - ✓ HTTP/2 Support
-4. **Advanced sekmesi:**
-   ```nginx
-   # Collabora WOPI için gerekli header'lar
-   proxy_set_header Host $host;
-   proxy_set_header X-Real-IP $remote_addr;
-   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-   proxy_set_header X-Forwarded-Proto $scheme;
-   
-   # WebSocket desteği (zorunlu)
-   proxy_http_version 1.1;
-   proxy_set_header Upgrade $http_upgrade;
-   proxy_set_header Connection "upgrade";
-   
-   # Timeout (uzun süren düzenlemeler için)
-   proxy_connect_timeout 3600;
-   proxy_send_timeout 3600;
-   proxy_read_timeout 3600;
-   ```
-
-### Collabora Yönetimi
+#### 2. Container'ı Başlat
 
 ```bash
-# Collabora loglarını izle
-docker compose -f docker-compose.yml -f docker-compose.collabora.yml logs -f collabora
-
-# Collabora'yı yeniden başlat
-docker compose -f docker-compose.yml -f docker-compose.collabora.yml restart collabora
-
-# WOPI discovery endpoint kontrolü
-curl -s http://localhost:9980/hosting/discovery | head -50
-
-# Collabora capabilities kontrolü
-curl -s http://localhost:9980/hosting/capabilities
-
-# Collabora admin paneli
-# URL: https://office.yourdomain.com/browser/dist/admin/admin.html
-# Kullanıcı/Şifre: .env dosyasında COLLABORA_ADMIN_USER ve COLLABORA_ADMIN_PASSWORD
+cd /opt/nextcloud
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d collabora
 ```
+
+#### 3. NPM'de Proxy Host Ekle
+
+| Alan | Değer |
+|------|-------|
+| Domain Names | `office.yourdomain.com` |
+| Scheme | `http` |
+| Forward Hostname | `collabora` (aynı makine) veya `SUNUCU_IP` (ayrı makine) |
+| Forward Port | `9980` |
+| Websockets Support | ✅ (zorunlu!) |
+| SSL | Let's Encrypt ile |
+
+**Advanced sekmesi:**
+```nginx
+proxy_set_header Host $host;
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_read_timeout 3600;
+```
+
+#### 4. Nextcloud'da Aktifleştir
+
+1. Ayarlar → Uygulamalar → "Nextcloud Office" yükle
+2. Ayarlar → Yönetim → Nextcloud Office
+3. "Use your own server" seç
+4. URL: `https://office.yourdomain.com`
 
 ### Collabora Sorun Giderme
 
-#### "WOPI host did not respond"
-
-1. **WOPI URL kontrolü:**
-   ```bash
-   # .env dosyasında COLLABORA_WOPI_URL doğru mu?
-   # Nextcloud'un public URL'i olmalı
-   grep COLLABORA_WOPI_URL /opt/nextcloud/.env
-   ```
-
-2. **Collabora'dan Nextcloud'a erişim testi:**
-   ```bash
-   docker exec collabora curl -I https://cloud.yourdomain.com
-   ```
-
-3. **aliasgroup ayarını kontrol et:**
-   ```bash
-   docker logs collabora 2>&1 | grep -i alias
-   ```
-
-#### "Discovery endpoint not responding"
+**"Unable to connect to Collabora server" hatası:**
 
 ```bash
-# Collabora health check
-curl -v http://localhost:9980/hosting/discovery
+# 1. .env değerlerini kontrol et
+grep COLLABORA /opt/nextcloud/.env
 
-# Container içinden test
-docker exec collabora curl -f http://localhost:9980/hosting/discovery
+# 2. Container'ı yeniden başlat
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml restart collabora
+
+# 3. Discovery endpoint'i test et
+curl -s http://localhost:9980/hosting/discovery | head -10
+
+# 4. NPM'den erişimi test et (aynı makinede)
+docker exec nginx-proxy-manager curl -s http://collabora:9980/hosting/discovery | head -5
 ```
-
-#### Doküman açılmıyor
-
-1. **WebSocket bağlantısını kontrol et:**
-   - NPM'de "Websockets Support" aktif mi?
-   - Tarayıcı konsolu'nda WebSocket hataları var mı?
-
-2. **SSL sertifikasını kontrol et:**
-   ```bash
-   curl -v https://office.yourdomain.com/hosting/capabilities
-   ```
 
 ## 🔐 Nginx Proxy Manager (SSL)
 
-NPM, Let's Encrypt sertifikalarını otomatik yönetir ve SSL terminasyonu sağlar.
+NPM, Let's Encrypt sertifikalarını otomatik yönetir.
 
 ### NPM İlk Kurulum
 
-1. **Admin paneline eriş:** `http://SUNUCU_IP:81`
-2. **Varsayılan giriş:**
-   - Email: `admin@example.com`
-   - Şifre: `changeme`
-3. **Şifreyi değiştir** (ilk girişte zorunlu)
+1. **Admin paneli:** `http://SUNUCU_IP:81`
+2. **Varsayılan giriş:** `admin@example.com` / `changeme`
 
-### Nextcloud için Proxy Host Ekleme
+### Proxy Host Ayarları
 
-1. **Hosts → Proxy Hosts → Add Proxy Host**
-2. **Details sekmesi:**
-   - Domain Names: `cloud.yourdomain.com`
-   - Scheme: `http`
-   - Forward Hostname / IP: `nginx`
-   - Forward Port: `80`
-   - ✓ Cache Assets
-   - ✓ Block Common Exploits
-   - ✓ Websockets Support
-3. **SSL sekmesi:**
-   - SSL Certificate: Request a new SSL Certificate
-   - ✓ Force SSL
-   - ✓ HTTP/2 Support
-   - ✓ HSTS Enabled
-   - Email: SSL bildirimleri için email
-4. **Advanced sekmesi (ÖNEMLİ):**
-   ```nginx
-   # Gerçek IP adresi iletimi (brute-force koruması için gerekli)
-   proxy_set_header Host $host;
-   proxy_set_header X-Real-IP $remote_addr;
-   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-   proxy_set_header X-Forwarded-Proto $scheme;
-   
-   # Büyük dosya yüklemeleri için
-   client_max_body_size 16G;
-   proxy_request_buffering off;
-   
-   # Timeout ayarları (büyük dosya transferleri için)
-   proxy_connect_timeout 3600;
-   proxy_send_timeout 3600;
-   proxy_read_timeout 3600;
-   
-   # WebDAV desteği
-   proxy_buffering off;
-   ```
+#### Nextcloud için:
 
-### Collabora için Proxy Host Ekleme
+| Alan | NPM Aynı Makine | NPM Ayrı Makine |
+|------|-----------------|-----------------|
+| Domain | `cloud.yourdomain.com` | `cloud.yourdomain.com` |
+| Forward Hostname | `nginx` | `SUNUCU_IP` |
+| Forward Port | `8080` | `80` |
 
-1. **Hosts → Proxy Hosts → Add Proxy Host**
-2. **Details sekmesi:**
-   - Domain Names: `office.yourdomain.com`
-   - Scheme: `http`
-   - Forward Hostname / IP: `collabora`
-   - Forward Port: `9980`
-   - ✓ Websockets Support (zorunlu!)
-3. **SSL sekmesi:**
-   - SSL Certificate: Request a new SSL Certificate
-   - ✓ Force SSL
-   - ✓ HTTP/2 Support
-4. **Advanced sekmesi:**
-   ```nginx
-   # Collabora için gerekli header'lar
-   proxy_set_header Host $host;
-   proxy_set_header X-Real-IP $remote_addr;
-   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-   proxy_set_header X-Forwarded-Proto $scheme;
-   
-   # WebSocket desteği (zorunlu)
-   proxy_http_version 1.1;
-   proxy_set_header Upgrade $http_upgrade;
-   proxy_set_header Connection "upgrade";
-   
-   # Timeout ayarları
-   proxy_connect_timeout 3600;
-   proxy_send_timeout 3600;
-   proxy_read_timeout 3600;
-   ```
+#### Collabora için:
 
-### NPM Sonrası Nextcloud Yapılandırması
+| Alan | NPM Aynı Makine | NPM Ayrı Makine |
+|------|-----------------|-----------------|
+| Domain | `office.yourdomain.com` | `office.yourdomain.com` |
+| Forward Hostname | `collabora` | `SUNUCU_IP` |
+| Forward Port | `9980` | `9980` |
 
-NPM üzerinden gerçek IP adreslerinin Nextcloud'a iletilmesi için `config.php` dosyasına şu ayarları ekleyin:
+**Her iki proxy için Advanced sekmesi:**
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+client_max_body_size 16G;
+proxy_read_timeout 3600;
+```
+
+### Nextcloud Trusted Proxy Ayarları
 
 ```bash
-# Trusted proxies ekle (Docker network aralıkları)
+# Docker network (NPM aynı makinede)
 docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="172.20.0.0/16"
-docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 1 --value="10.0.0.0/8"
-docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 2 --value="192.168.0.0/16"
-docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 3 --value="172.16.0.0/12"
 
-# Forwarded for headers ayarla (gerçek IP algılama için)
+# VEYA NPM IP'si (NPM ayrı makinede)
+# docker exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value="NPM_IP"
+
+# Gerçek IP algılama
 docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 0 --value="HTTP_X_FORWARDED_FOR"
-docker exec -u www-data nextcloud php occ config:system:set forwarded_for_headers 1 --value="HTTP_X_REAL_IP"
 
-# HTTPS zorlaması
+# HTTPS zorla
 docker exec -u www-data nextcloud php occ config:system:set overwriteprotocol --value="https"
-docker exec -u www-data nextcloud php occ config:system:set overwrite.cli.url --value="https://cloud.yourdomain.com"
 ```
 
-> ⚠️ **Önemli:** Bu ayarlar yapılmazsa, tüm istekler proxy IP'sinden geliyor gibi görünür ve brute-force koruması yanlış çalışarak "multiple invalid login attempts" hatası verir.
-
-### Brute-Force Throttle Temizleme
-
-Eğer IP'niz yanlışlıkla engellendiyse:
+### Brute-Force Engeli Temizleme
 
 ```bash
-# Belirli bir IP'yi temizle
-docker exec -u www-data nextcloud php occ security:bruteforce:reset SENIN_IP_ADRESIN
-
-# Tüm engelleri temizle
 docker exec -u www-data nextcloud php occ security:bruteforce:reset all
-```
-
-### NPM Yönetimi
-
-```bash
-# NPM loglarını izle
-docker compose -f docker-compose.yml -f docker-compose.npm.yml logs -f npm
-
-# NPM'i yeniden başlat
-docker compose -f docker-compose.yml -f docker-compose.npm.yml restart npm
 ```
 
 ## 💾 Veri Depolama

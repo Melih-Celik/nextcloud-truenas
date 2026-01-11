@@ -30,22 +30,16 @@ services:
       # WOPI Host Yapılandırması (Kritik!)
       # =========================================
       # aliasgroup1: Collabora'nın WOPI isteklerini kabul edeceği Nextcloud URL'leri
-      # - host: Public Nextcloud URL (NPM üzerinden erişilen)
-      # - allow: WOPI isteklerine izin verilen IP/hostname pattern'leri
-      #
       # Örnek: Nextcloud https://cloud.example.com adresindeyse
-      # aliasgroup1=https://cloud.example.com:443
-      - aliasgroup1=${COLLABORA_WOPI_URL:-https://cloud.example.com:443}
-      
-      # Birden fazla Nextcloud instance varsa (opsiyonel)
-      # - aliasgroup2=https://cloud2.example.com:443
+      # COLLABORA_WOPI_URL=https://cloud.example.com:443
+      - aliasgroup1=${COLLABORA_WOPI_URL:?COLLABORA_WOPI_URL gerekli - .env dosyasını kontrol edin}
       
       # =========================================
       # Server Yapılandırması
       # =========================================
       # server_name: Collabora'nın kendi public URL'i (NPM üzerinden)
-      # Nextcloud bu URL'e bağlanarak doküman düzenleyiciyi yükler
-      - server_name=${COLLABORA_SERVER_NAME:-office.example.com}
+      # Örnek: office.example.com
+      - server_name=${COLLABORA_SERVER_NAME:?COLLABORA_SERVER_NAME gerekli - .env dosyasını kontrol edin}
       
       # =========================================
       # SSL Ayarları (NPM arkasında)

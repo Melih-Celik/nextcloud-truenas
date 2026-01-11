@@ -68,16 +68,16 @@ ask_yes_no() {
     local response
     
     if [ "$default" = "y" ]; then
-        prompt="$prompt [E/h]: "
+        prompt="$prompt [Y/n]: "
     else
-        prompt="$prompt [e/H]: "
+        prompt="$prompt [y/N]: "
     fi
     
     read -p "$prompt" response
     response=${response:-$default}
     
     case "$response" in
-        [eEyY]*) return 0 ;;
+        [yY]*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -186,76 +186,88 @@ collect_network_config() {
 }
 
 collect_domain_config() {
-    print_section "🌐 Domain ve SSL Yapılandırması"
+    print_section "🌐 Domain Yapılandırması"
     
-    if ask_yes_no "Dış erişim için domain kullanacak mısınız?" "y"; then
+    if ask_yes_no "Domain adresi kullanacak misiniz? (ornegin: cloud.example.com)" "y"; then
         USE_DOMAIN="true"
         
-        ask_input "Domain adresi (örn: cloud.example.com)" "" DOMAIN_NAME
+        ask_input "Domain adresi" "" DOMAIN_NAME
         
         while ! validate_domain "$DOMAIN_NAME"; do
-            print_error "Geçersiz domain adresi!"
+            print_error "Gecersiz domain adresi!"
             ask_input "Domain adresi" "" DOMAIN_NAME
         done
-        
-        ask_input "SSL sertifikası için e-posta" "admin@$DOMAIN_NAME" SSL_EMAIL
         
         # Trusted domains
         TRUSTED_DOMAINS="localhost,$DOMAIN_NAME,$NEXTCLOUD_SERVER_IP"
     else
         USE_DOMAIN="false"
         DOMAIN_NAME=""
-        SSL_EMAIL=""
         TRUSTED_DOMAINS="localhost,$NEXTCLOUD_SERVER_IP"
     fi
     
-    print_success "Domain yapılandırması tamamlandı"
+    print_success "Domain yapılandirmasi tamamlandi"
 }
 
 collect_proxy_config() {
     print_section "🔀 Reverse Proxy Yapılandırması"
     
-    echo "Nextcloud'a nasıl erişim sağlanacak?"
+    echo "Nextcloud'a nasil erisim saglanacak?"
     echo ""
-    echo "  1) Doğrudan erişim (HTTP - Sadece yerel ağ)"
-    echo "  2) Nginx Proxy Manager (NPM) üzerinden (Önerilen)"
+    echo "  1) Dogrudan erisim (HTTP - Sadece yerel ag, SSL yok)"
+    echo "  2) Nginx Proxy Manager (NPM) ile (SSL icin onerilen)"
     echo "  3) Harici reverse proxy (Traefik, Caddy, vb.)"
     echo ""
     
-    read -p "Seçiminiz [1-3] (varsayılan: 2): " proxy_choice
+    read -p "Seciminiz [1-3] (varsayilan: 2): " proxy_choice
     proxy_choice=${proxy_choice:-2}
     
     case $proxy_choice in
         1)
             USE_REVERSE_PROXY="false"
             PROXY_TYPE="none"
-            print_info "Doğrudan HTTP erişimi seçildi. SSL kullanılmayacak."
+            INSTALL_NPM="false"
+            print_info "Dogrudan HTTP erisimi secildi. SSL kullanilmayacak."
             ;;
         2)
             USE_REVERSE_PROXY="true"
             PROXY_TYPE="npm"
-            print_info "Nginx Proxy Manager kullanılacak."
             
-            if ask_yes_no "NPM aynı sunucuda Docker ile kurulsun mu?" "n"; then
+            echo ""
+            echo "NPM (Nginx Proxy Manager) secenekleri:"
+            echo "  1) Bu sunucuya NPM kur (yeni kurulum)"
+            echo "  2) Mevcut NPM sunucumu kullanacagim"
+            echo ""
+            
+            read -p "Seciminiz [1-2] (varsayilan: 1): " npm_choice
+            npm_choice=${npm_choice:-1}
+            
+            if [ "$npm_choice" = "1" ]; then
                 INSTALL_NPM="true"
                 ask_input "NPM Admin Panel portu" "81" NPM_ADMIN_PORT
                 ask_input "NPM HTTP portu" "80" NPM_HTTP_PORT
                 ask_input "NPM HTTPS portu" "443" NPM_HTTPS_PORT
+                echo ""
+                print_info "NPM kurulduktan sonra SSL ayarlarini NPM arayuzunden yapmaniz gerekecek."
+                print_info "Detaylar icin: docs/07-npm-ssl-setup.md"
             else
                 INSTALL_NPM="false"
-                ask_input "NPM sunucu adresi (IP veya hostname)" "" NPM_HOST
+                ask_input "Mevcut NPM sunucu adresi (IP veya hostname)" "" NPM_HOST
+                echo ""
+                print_info "NPM'de bu sunucu icin proxy host eklemeniz gerekecek."
+                print_info "Hedef: http://$NEXTCLOUD_SERVER_IP:80"
             fi
             ;;
         3)
             USE_REVERSE_PROXY="true"
             PROXY_TYPE="external"
             INSTALL_NPM="false"
-            print_info "Harici reverse proxy kullanılacak."
-            ask_input "Proxy sunucu IP adresi veya subnet (örn: 172.20.0.0/16)" "172.20.0.0/16" PROXY_TRUSTED_NETWORK
+            print_info "Harici reverse proxy kullanilacak."
+            ask_input "Proxy sunucu IP adresi veya subnet (orn: 172.20.0.0/16)" "172.20.0.0/16" PROXY_TRUSTED_NETWORK
             ;;
     esac
     
-    print_success "Proxy yapılandırması tamamlandı"
+    print_success "Proxy yapilandirmasi tamamlandi"
 }
 
 collect_storage_config() {
@@ -496,12 +508,11 @@ show_config_summary() {
     echo "  TrueNAS IP          : $TRUENAS_IP"
     echo ""
     
-    echo -e "${BOLD}Domain & SSL:${NC}"
+    echo -e "${BOLD}Domain:${NC}"
     if [ "$USE_DOMAIN" = "true" ]; then
         echo "  Domain              : $DOMAIN_NAME"
-        echo "  SSL E-posta         : $SSL_EMAIL"
     else
-        echo "  Domain              : Kullanılmıyor"
+        echo "  Domain              : Kullanilmiyor"
     fi
     echo "  Trusted Domains     : $TRUSTED_DOMAINS"
     echo ""
@@ -509,7 +520,7 @@ show_config_summary() {
     echo -e "${BOLD}Reverse Proxy:${NC}"
     case $PROXY_TYPE in
         none)
-            echo "  Tip                 : Doğrudan erişim (HTTP)"
+            echo "  Tip                 : Dogrudan erisim (HTTP)"
             ;;
         npm)
             echo "  Tip                 : Nginx Proxy Manager"
@@ -584,10 +595,9 @@ save_config() {
 NEXTCLOUD_SERVER_IP="$NEXTCLOUD_SERVER_IP"
 TRUENAS_IP="$TRUENAS_IP"
 
-# ==== Domain & SSL ====
+# ==== Domain ====
 USE_DOMAIN="$USE_DOMAIN"
 DOMAIN_NAME="$DOMAIN_NAME"
-SSL_EMAIL="$SSL_EMAIL"
 TRUSTED_DOMAINS="$TRUSTED_DOMAINS"
 
 # ==== Reverse Proxy ====
@@ -730,11 +740,10 @@ INDEX_WORKERS=${INDEX_WORKERS:-4}
 SCAN_BATCH_SIZE=${SCAN_BATCH_SIZE:-1000}
 
 # --------------------------------------------------
-# DOMAIN / SSL SETTINGS
+# DOMAIN SETTINGS
 # --------------------------------------------------
 
 DOMAIN_NAME=${DOMAIN_NAME:-localhost}
-SSL_EMAIL=${SSL_EMAIL:-}
 
 # --------------------------------------------------
 # DOCKER IMAGE TAGS

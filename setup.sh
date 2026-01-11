@@ -747,74 +747,94 @@ generate_env_file() {
 # NEXTCLOUD SETTINGS
 # --------------------------------------------------
 
-NEXTCLOUD_ADMIN_USER=$NEXTCLOUD_ADMIN_USER
-NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD
-NEXTCLOUD_TRUSTED_DOMAINS=$TRUSTED_DOMAINS
+NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER}"
+NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD}"
+NEXTCLOUD_TRUSTED_DOMAINS="${TRUSTED_DOMAINS}"
 
 # --------------------------------------------------
 # DATABASE SETTINGS (PostgreSQL)
 # --------------------------------------------------
 
-POSTGRES_DB=$POSTGRES_DB
-POSTGRES_USER=$POSTGRES_USER
-POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+POSTGRES_DB="${POSTGRES_DB}"
+POSTGRES_USER="${POSTGRES_USER}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
 
 # --------------------------------------------------
 # REDIS CACHE SETTINGS
 # --------------------------------------------------
 
-REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_PASSWORD="${REDIS_PASSWORD}"
 
 # --------------------------------------------------
 # PHP SETTINGS
 # --------------------------------------------------
 
-PHP_MEMORY_LIMIT=$PHP_MEMORY_LIMIT
-PHP_UPLOAD_LIMIT=$PHP_UPLOAD_LIMIT
+PHP_MEMORY_LIMIT="${PHP_MEMORY_LIMIT}"
+PHP_UPLOAD_LIMIT="${PHP_UPLOAD_LIMIT}"
 
 # --------------------------------------------------
 # TRUENAS NFS SETTINGS
 # --------------------------------------------------
 
-TRUENAS_IP=$TRUENAS_IP
+TRUENAS_IP="${TRUENAS_IP}"
 
 # NFS Mount Points (config + data only)
 # NOTE: PostgreSQL database is stored locally for better performance
-NFS_CONFIG_MOUNT=$NFS_CONFIG_MOUNT
-NFS_DATA_MOUNT=$NFS_DATA_MOUNT
+NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT}"
 
 # --------------------------------------------------
 # LARGE DATASET SETTINGS (60TB+)
 # --------------------------------------------------
 
-LARGE_DATASET=${LARGE_DATASET:-false}
-INDEX_WORKERS=${INDEX_WORKERS:-4}
-SCAN_BATCH_SIZE=${SCAN_BATCH_SIZE:-1000}
+LARGE_DATASET="${LARGE_DATASET:-false}"
+INDEX_WORKERS="${INDEX_WORKERS:-4}"
+SCAN_BATCH_SIZE="${SCAN_BATCH_SIZE:-1000}"
 
 # --------------------------------------------------
 # DOMAIN SETTINGS
 # --------------------------------------------------
 
-DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+DOMAIN_NAME="${DOMAIN_NAME:-localhost}"
 
 # --------------------------------------------------
 # DOCKER IMAGE TAGS
 # --------------------------------------------------
 
-NEXTCLOUD_TAG=$NEXTCLOUD_TAG
-POSTGRES_TAG=$POSTGRES_TAG
-REDIS_TAG=$REDIS_TAG
+NEXTCLOUD_TAG="${NEXTCLOUD_TAG}"
+POSTGRES_TAG="${POSTGRES_TAG}"
+REDIS_TAG="${REDIS_TAG}"
+
+# --------------------------------------------------
+# NGINX PROXY MANAGER (optional)
+# --------------------------------------------------
+
+INSTALL_NPM="${INSTALL_NPM:-false}"
+NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
+NPM_ADMIN_PORT="${NPM_ADMIN_PORT:-81}"
+NPM_HTTP_PORT="${NPM_HTTP_PORT:-80}"
+NPM_HTTPS_PORT="${NPM_HTTPS_PORT:-443}"
+
+# --------------------------------------------------
+# COLLABORA ONLINE (optional)
+# --------------------------------------------------
+
+INSTALL_COLLABORA="${INSTALL_COLLABORA:-false}"
+COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-nextcloud}"
+COLLABORA_PORT="${COLLABORA_PORT:-9980}"
+COLLABORA_ADMIN_USER="${COLLABORA_ADMIN_USER:-admin}"
+COLLABORA_ADMIN_PASSWORD="${COLLABORA_ADMIN_PASSWORD:-}"
 
 # --------------------------------------------------
 # SMTP SETTINGS (optional)
 # --------------------------------------------------
 
-SMTP_HOST=${SMTP_HOST:-}
-SMTP_PORT=${SMTP_PORT:-587}
-SMTP_SECURE=${SMTP_SECURE:-tls}
-SMTP_USER=${SMTP_USER:-}
-SMTP_PASSWORD=${SMTP_PASSWORD:-}
-SMTP_FROM=${SMTP_FROM:-}
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_SECURE="${SMTP_SECURE:-tls}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASSWORD="${SMTP_PASSWORD:-}"
+SMTP_FROM="${SMTP_FROM:-}"
 EOF
     
     chmod 600 "$env_file"

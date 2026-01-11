@@ -1,10 +1,20 @@
 # 🗄️ Nextcloud + TrueNAS Kurumsal Dosya Paylaşım Sistemi
 
-60TB kapasiteli, self-hosted bulut depolama çözümü.
+60TB+ kapasiteli, self-hosted kurumsal bulut depolama çözümü. Collabora Online ofis paketi, Nginx Proxy Manager SSL desteği ve TrueNAS NFS entegrasyonu ile tam teşekküllü bir dosya paylaşım platformu.
 
-## � Hızlı Başlangıç (İnteraktif Kurulum)
+## ✨ Özellikler
 
-En kolay kurulum yöntemi interaktif kurulum sihirbazını kullanmaktır:
+| Özellik | Açıklama |
+|---------|----------|
+| 📁 **60TB+ Depolama** | TrueNAS ZFS üzerinde NFS ile yüksek kapasiteli depolama |
+| 📝 **Collabora Online** | Tarayıcıda Word, Excel, PowerPoint düzenleme |
+| 🔒 **SSL/TLS** | Nginx Proxy Manager ile Let's Encrypt sertifikaları |
+| 🚀 **Yüksek Performans** | Redis cache, PostgreSQL, PHP-FPM optimizasyonları |
+| 🔐 **Güvenlik** | Fail2ban, Firewall, 2FA desteği |
+| 📧 **E-posta Bildirimleri** | SMTP entegrasyonu |
+| 💾 **Otomatik Yedekleme** | Zamanlanmış yedekleme ve ZFS snapshot desteği |
+
+## 🚀 Hızlı Başlangıç
 
 ```bash
 # Repoyu klonlayın
@@ -15,246 +25,467 @@ cd nextcloud-truenas
 ./setup.sh
 ```
 
-Kurulum sihirbazı size şu konularda sorular soracak:
-- 📡 Ağ yapılandırması (TrueNAS IP, Nextcloud sunucu IP)
-- 🌐 Domain ve SSL ayarları
-- 🔀 Reverse proxy seçimi (Nginx Proxy Manager, harici proxy, veya doğrudan erişim)
-- 💾 NFS depolama ayarları
-- ☁️ Nextcloud admin bilgileri
-- 🗄️ Veritabanı şifreleri (otomatik oluşturulabilir)
-- 📧 E-posta bildirimleri (opsiyonel)
-- 🔐 Güvenlik ayarları (Fail2ban, Firewall)
-- 💾 Yedekleme yapılandırması
+Kurulum sihirbazı tüm ayarları interaktif olarak sorar ve sistemi otomatik kurar.
 
-## �📐 Sistem Mimarisi
+## 📐 Sistem Mimarisi
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              İNTERNET                                    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         FIREWALL / ROUTER                                │
-│                    (Port 443 → Nextcloud Server)                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │         İÇ AĞ (LAN)           │
-                    │        192.168.1.0/24         │
-                    └───────────────┬───────────────┘
-                                    │
-            ┌───────────────────────┼───────────────────────┐
-            │                       │                       │
-            ▼                       ▼                       ▼
-┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│  NEXTCLOUD SERVER │   │  TRUENAS SERVER   │   │   CLIENT'LAR      │
-│  192.168.1.10     │   │  192.168.1.20     │   │                   │
-├───────────────────┤   ├───────────────────┤   │  • Windows PC     │
-│  • AlmaLinux 10   │   │  • TrueNAS SCALE  │   │  • macOS          │
-│  • Docker         │   │  • ZFS Storage    │   │  • iPhone/Android │
-│  • Nginx          │   │  • NFS Server     │   │  • Linux          │
-│  • Nextcloud      │◄──┤  • 60TB Pool      │   │                   │
-│  • PostgreSQL     │NFS│  • RAIDZ2         │   └───────────────────┘
-│  • Redis          │   │                   │
-└───────────────────┘   └───────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                İNTERNET                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼ (443/HTTPS)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    NEXTCLOUD SERVER (AlmaLinux 10)                           │
+│                          192.168.1.10                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────┐          │
+│  │ Nginx Proxy     │  │    Collabora     │  │      Nginx         │          │
+│  │ Manager (NPM)   │──│    Online        │──│   (Nextcloud)      │          │
+│  │ :80, :443, :81  │  │     :9980        │  │      :8080         │          │
+│  └─────────────────┘  └──────────────────┘  └────────────────────┘          │
+│           │                                           │                      │
+│           └───────────────────┬───────────────────────┘                      │
+│                               ▼                                              │
+│  ┌────────────────────────────────────────────────────────────────┐         │
+│  │                    Nextcloud (PHP-FPM)                         │         │
+│  │                      stable-fpm (Debian)                       │         │
+│  └────────────────────────────────────────────────────────────────┘         │
+│           │                               │                                  │
+│           ▼                               ▼                                  │
+│  ┌─────────────────┐             ┌─────────────────┐                        │
+│  │   PostgreSQL    │             │      Redis      │                        │
+│  │  (Local Volume) │             │     (Cache)     │                        │
+│  └─────────────────┘             └─────────────────┘                        │
+│           │                                                                  │
+└───────────┼──────────────────────────────────────────────────────────────────┘
+            │ NFS
+            ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      TRUENAS SERVER (NFS Storage)                            │
+│                          192.168.1.20                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  /mnt/storage/nextcloud/                                                     │
+│  ├── config/     ← Nextcloud yapılandırma (UID: 33)                         │
+│  └── data/       ← Kullanıcı dosyaları 60TB+ (UID: 33)                      │
+│                                                                              │
+│  NOT: PostgreSQL veritabanı YEREL Docker volume'da tutulur                  │
+│       (NFS, veritabanı için uygun değildir)                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🖥️ Donanım Gereksinimleri
+## 🐳 Docker Servisleri
 
-### TrueNAS Sunucusu (Storage)
-| Bileşen | Minimum | Önerilen |
-|---------|---------|----------|
-| CPU | Intel i5 / Xeon E3 | Intel Xeon E-2300 / AMD EPYC |
-| RAM | 32 GB ECC | 64 GB ECC |
-| Boot | 2x 32GB SSD (Mirror) | 2x 64GB NVMe (Mirror) |
-| Data | 8x 10TB NAS HDD | 8x 10TB Enterprise HDD |
-| SLOG | - | 32GB Intel Optane |
-| L2ARC | - | 512GB Enterprise NVMe |
-| NIC | 1 Gbps | 10 Gbps |
-
-### Nextcloud Sunucusu (Application)
-| Bileşen | Minimum | Önerilen |
-|---------|---------|----------|
-| CPU | 4 Core | 8 Core |
-| RAM | 8 GB | 16 GB |
-| Boot/OS | 64 GB SSD | 128 GB NVMe |
-| NIC | 1 Gbps | 10 Gbps |
+| Servis | Image | Port | Açıklama |
+|--------|-------|------|----------|
+| **nginx** | nginx:alpine | 80/8080 | Nextcloud reverse proxy |
+| **nextcloud** | nextcloud:stable-fpm | 9000 | PHP-FPM uygulaması |
+| **postgres** | postgres:16-alpine | 5432 | Veritabanı (local volume) |
+| **redis** | redis:7-alpine | 6379 | Session ve cache |
+| **cron** | nextcloud:stable-fpm | - | Arka plan görevleri |
+| **npm** *(opsiyonel)* | jc21/nginx-proxy-manager | 80,443,81 | SSL yönetimi |
+| **collabora** *(opsiyonel)* | collabora/code | 9980 | Online ofis paketi |
 
 ## 📁 Proje Yapısı
 
 ```
 nextcloud-truenas/
-├── setup.sh                       # 🆕 İnteraktif kurulum sihirbazı
-├── README.md                      # Bu dosya
-├── .install-config                # Kurulum yapılandırması (setup.sh tarafından oluşturulur)
-├── docs/
-│   ├── 01-truenas-setup.md       # TrueNAS kurulum rehberi
-│   ├── 02-nextcloud-setup.md     # Nextcloud kurulum rehberi (AlmaLinux 10)
-│   ├── 03-security-hardening.md  # Güvenlik yapılandırması
-│   ├── 04-performance-tuning.md  # Performans optimizasyonu
-│   └── 05-maintenance.md         # Bakım prosedürleri
+├── setup.sh                          # İnteraktif kurulum sihirbazı
+├── README.md                         # Bu dosya
 ├── docker/
-│   ├── docker-compose.yml        # Ana Docker Compose
-│   ├── docker-compose.override.yml # NPM için override (opsiyonel)
-│   ├── .env                      # Environment değişkenleri (setup.sh tarafından oluşturulur)
-│   ├── .env.example              # Ortam değişkenleri örneği
+│   ├── docker-compose.yml            # Ana servisler
+│   ├── docker-compose.npm.yml        # Nginx Proxy Manager
+│   ├── docker-compose.collabora.yml  # Collabora Online
+│   ├── .env.example                  # Ortam değişkenleri örneği
 │   └── configs/
-│       ├── nginx/
-│       │   └── nextcloud.conf    # Nginx yapılandırması
-│       ├── php/
-│       │   └── custom.ini        # PHP ayarları
-│       └── redis/
-│           └── redis.conf        # Redis yapılandırması
+│       ├── nginx/nextcloud.conf      # Nginx yapılandırması
+│       ├── php/custom.ini            # PHP ayarları
+│       ├── php/redis-session.ini.template  # Redis session template
+│       ├── redis/redis.conf          # Redis yapılandırması
+│       └── nextcloud/hooks/          # Otomatik yapılandırma hook'ları
 ├── scripts/
-│   ├── 01-prepare-host.sh        # AlmaLinux host hazırlık scripti
-│   ├── 02-mount-nfs.sh           # NFS mount scripti (3 mount: config, data, database)
-│   ├── 03-deploy.sh              # Deployment scripti
-│   ├── backup.sh                 # Yedekleme scripti
-│   ├── health-check.sh           # Sağlık kontrolü
-│   ├── uninstall.sh              # 🆕 Kaldırma/temizlik scripti
-│   ├── optimize-large-data.sh    # 🆕 60TB+ veri optimizasyon aracı
-│   └── data-migration.sh         # Veri göç scripti
-└── configs/
-    └── nextcloud-config.php      # Nextcloud config örneği
+│   ├── 01-prepare-host.sh            # Host hazırlık scripti
+│   ├── 02-mount-nfs.sh               # NFS mount scripti
+│   ├── 03-deploy.sh                  # Deployment scripti
+│   ├── backup.sh                     # Yedekleme scripti
+│   └── health-check.sh               # Sağlık kontrolü
+└── docs/
+    ├── 01-truenas-setup.md           # TrueNAS kurulum rehberi
+    ├── 02-nextcloud-setup.md         # Nextcloud kurulum rehberi
+    ├── 03-security-hardening.md      # Güvenlik yapılandırması
+    ├── 04-performance-tuning.md      # Performans optimizasyonu
+    └── 05-maintenance.md             # Bakım prosedürleri
 ```
 
-## 💾 TrueNAS NFS Dizin Yapısı
+## 🎯 Docker Compose Dosyaları
 
-TrueNAS'ta 3 ayrı dataset oluşturulmalıdır:
+Sistem modüler yapıda tasarlanmıştır. Kurulum seçeneklerine göre farklı compose dosyaları kullanılır:
 
-```
-/mnt/storage/nextcloud/
-├── config/     # Nextcloud yapılandırma dosyaları
-├── data/       # Kullanıcı verileri (60TB)
-└── database/   # PostgreSQL veritabanı
-```
+| Dosya | İçerik | Ne Zaman Kullanılır |
+|-------|--------|---------------------|
+| `docker-compose.yml` | nginx, nextcloud, postgres, redis, cron | **Her zaman** (temel servisler) |
+| `docker-compose.npm.yml` | Nginx Proxy Manager | SSL/Let's Encrypt istenirse |
+| `docker-compose.collabora.yml` | Collabora Online | Office düzenleme istenirse |
 
-Bu yapı şu avantajları sağlar:
-- **Ayrı snapshot politikaları**: Config ve database için daha sık snapshot
-- **Farklı ZFS ayarları**: Data için büyük recordsize, database için küçük
-- **Kolay yedekleme**: Her bileşeni ayrı yedekleyebilme
-- **Performans**: Veritabanı I/O'sunun data I/O'sundan etkilenmemesi
-
-## 🚀 Kurulum Yöntemleri
-
-### Yöntem 1: İnteraktif Kurulum (Önerilen)
+### Compose Kombinasyonları
 
 ```bash
-# İnteraktif sihirbazı başlat
-./setup.sh
+# Sadece temel servisler
+docker compose -f docker-compose.yml up -d
 
-# Sihirbaz sorulara cevap verdikten sonra kurulumu başlatacak
+# Temel + NPM (SSL)
+docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
+
+# Temel + Collabora (Office)
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d
+
+# Temel + NPM + Collabora (Tam kurulum)
+docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml up -d
 ```
 
-### Yöntem 2: Manuel Kurulum
+## 🔧 Sistem Yönetimi
 
-#### 1. TrueNAS Kurulumu
-[TrueNAS Kurulum Rehberi](docs/01-truenas-setup.md)
+### Servisleri Başlatma
 
-#### 2. Nextcloud Sunucusu Hazırlığı (AlmaLinux 10)
 ```bash
-# Host'u hazırla
-sudo ./scripts/01-prepare-host.sh
+cd /opt/nextcloud
 
-# NFS'i mount et
-sudo ./scripts/02-mount-nfs.sh
+# Sadece temel servisler
+docker compose up -d
 
-# .env dosyasını düzenle
-cp docker/.env.example docker/.env
-nano docker/.env
+# NPM dahil
+docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d
 
-# Deploy et
-./scripts/03-deploy.sh
+# Collabora dahil
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml up -d
+
+# Tüm opsiyonel servisler dahil
+docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml up -d
 ```
 
-### Setup.sh Komut Satırı Seçenekleri
+### Servisleri Durdurma
 
 ```bash
-./setup.sh              # İnteraktif menü
-./setup.sh --help       # Yardım
-./setup.sh --config     # Sadece yapılandırma topla
-./setup.sh --generate   # Sadece dosyaları oluştur
-./setup.sh --install    # Mevcut yapılandırma ile kurulum başlat
-./setup.sh --show       # Mevcut yapılandırmayı göster
-./setup.sh --reset      # Yapılandırmayı sıfırla
+cd /opt/nextcloud
+
+# Sadece temel servisler
+docker compose down
+
+# NPM dahil
+docker compose -f docker-compose.yml -f docker-compose.npm.yml down
+
+# Tüm servisler
+docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml down
 ```
 
-## 🗑️ Kaldırma (Uninstall)
-
-Nextcloud kurulumunu kaldırmak için:
+### Servisleri Yeniden Başlatma
 
 ```bash
-sudo ./scripts/uninstall.sh
+cd /opt/nextcloud
+
+# Tek bir servisi yeniden başlat
+docker compose restart nextcloud
+docker compose restart nginx
+docker compose restart redis
+
+# Tüm servisleri yeniden başlat
+docker compose restart
 ```
 
-Seçenekler:
-1. Sadece container'ları durdur (veriler korunur)
-2. Container ve volume'ları sil (NFS verileri korunur)
-3. Tam temizlik - Docker + NFS mount kaldır (TrueNAS verileri korunur)
-4. TAM SİLME - Her şeyi sil (DİKKAT: Veriler dahil!)
-
-## 📊 60TB+ Veri Yönetimi
-
-Büyük veri setleri için optimizasyon aracı:
+### Sistem Güncelleme
 
 ```bash
-./scripts/optimize-large-data.sh
+cd /opt/nextcloud
+
+# 1. Yedek al (önerilir)
+./backup.sh
+
+# 2. Yeni image'ları çek
+# Sadece temel servisler
+docker compose pull
+
+# NPM dahil
+docker compose -f docker-compose.yml -f docker-compose.npm.yml pull
+
+# Collabora dahil
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml pull
+
+# Tüm servisler
+docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml pull
+
+# 3. Servisleri güncelle ve yeniden başlat
+docker compose -f docker-compose.yml -f docker-compose.npm.yml -f docker-compose.collabora.yml up -d
+
+# 4. Nextcloud veritabanı güncellemelerini uygula
+docker exec -u www-data nextcloud php occ upgrade
+docker exec -u www-data nextcloud php occ db:add-missing-indices
+docker exec -u www-data nextcloud php occ maintenance:repair
 ```
 
-Bu araç şunları yapabilir:
-- **Dosya Tarama**: Incremental/full scan, kullanıcı bazlı tarama
-- **Veritabanı Optimizasyonu**: İndeks ekleme, BigInt dönüşümü, VACUUM
-- **Önbellek Yönetimi**: Redis istatistikleri, cache temizleme
-- **Dosya Yönetimi**: Çöp kutusu temizleme, versiyon temizleme
-- **Performans Raporu**: Sistem durumu, disk kullanımı
-
-### 60TB Veri Taşıma
-
-Mevcut veriyi TrueNAS'a taşımak için:
+### Log İzleme
 
 ```bash
-# Doğrudan NFS üzerinden rsync
-rsync -avP --progress /kaynak/dizin/ /mnt/nextcloud/data/USERNAME/files/
+cd /opt/nextcloud
 
-# İzinleri düzelt (www-data UID:82 Alpine için)
-chown -R 82:82 /mnt/nextcloud/data/
+# Tüm servislerin logları
+docker compose logs -f
 
-# Nextcloud veritabanını güncelle
+# Belirli bir servisin logu
+docker compose logs -f nextcloud
+docker compose logs -f nginx
+docker compose logs -f postgres
+docker compose logs -f redis
+docker compose logs -f collabora
+docker compose logs -f npm
+
+# Son 100 satır
+docker compose logs --tail=100 nextcloud
+```
+
+### Servis Durumu
+
+```bash
+cd /opt/nextcloud
+
+# Çalışan container'lar
+docker compose ps
+
+# Container kaynak kullanımı
+docker stats
+```
+
+## 📝 Collabora Online (Office Paketi)
+
+Collabora Online, tarayıcı içinde Word, Excel ve PowerPoint dosyalarını düzenlemenizi sağlar.
+
+### Collabora Yapılandırması
+
+Kurulum sonrası Nextcloud'da aktifleştirme:
+
+1. **Nextcloud Office uygulamasını kur:**
+   - Ayarlar → Uygulamalar → Office & text → "Nextcloud Office" yükle
+
+2. **Collabora sunucusunu yapılandır:**
+   - Ayarlar → Yönetim → Office
+   - "Use your own server" seç
+   - URL gir:
+     - NPM varsa: `https://office.yourdomain.com`
+     - NPM yoksa: `http://SUNUCU_IP:9980`
+
+3. **NPM ile Collabora proxy (önerilir):**
+   - NPM'de yeni Proxy Host ekle
+   - Domain: `office.yourdomain.com`
+   - Scheme: `http`
+   - Forward Hostname: `collabora`
+   - Forward Port: `9980`
+   - SSL etkinleştir (Let's Encrypt)
+   - **Websockets Support** etkinleştir ✓
+
+### Collabora Yönetimi
+
+```bash
+# Collabora loglarını izle
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml logs -f collabora
+
+# Collabora'yı yeniden başlat
+docker compose -f docker-compose.yml -f docker-compose.collabora.yml restart collabora
+
+# Collabora admin paneli
+# URL: http://SUNUCU_IP:9980/browser/dist/admin/admin.html
+# Kullanıcı/Şifre: .env dosyasında COLLABORA_ADMIN_USER ve COLLABORA_ADMIN_PASSWORD
+```
+
+## 🔐 Nginx Proxy Manager (SSL)
+
+NPM, Let's Encrypt sertifikalarını otomatik yönetir ve SSL terminasyonu sağlar.
+
+### NPM İlk Kurulum
+
+1. **Admin paneline eriş:** `http://SUNUCU_IP:81`
+2. **Varsayılan giriş:**
+   - Email: `admin@example.com`
+   - Şifre: `changeme`
+3. **Şifreyi değiştir** (ilk girişte zorunlu)
+
+### Nextcloud için Proxy Host Ekleme
+
+1. **Hosts → Proxy Hosts → Add Proxy Host**
+2. **Details sekmesi:**
+   - Domain Names: `cloud.yourdomain.com`
+   - Scheme: `http`
+   - Forward Hostname / IP: `nginx`
+   - Forward Port: `80`
+   - ✓ Websockets Support
+3. **SSL sekmesi:**
+   - SSL Certificate: Request a new SSL Certificate
+   - ✓ Force SSL
+   - ✓ HTTP/2 Support
+   - Email: SSL bildirimleri için email
+
+### NPM Yönetimi
+
+```bash
+# NPM loglarını izle
+docker compose -f docker-compose.yml -f docker-compose.npm.yml logs -f npm
+
+# NPM'i yeniden başlat
+docker compose -f docker-compose.yml -f docker-compose.npm.yml restart npm
+```
+
+## 💾 Veri Depolama
+
+### NFS Mount Noktaları
+
+| Mount | Kaynak (TrueNAS) | Hedef (Sunucu) | Kullanım |
+|-------|------------------|----------------|----------|
+| config | /mnt/storage/nextcloud/config | /mnt/nextcloud/config | Nextcloud yapılandırması |
+| data | /mnt/storage/nextcloud/data | /mnt/nextcloud/data | Kullanıcı dosyaları (60TB+) |
+
+> **Not:** PostgreSQL veritabanı **lokal Docker volume**'da tutulur. NFS, veritabanı I/O için uygun değildir.
+
+### Dosya İzinleri
+
+Nextcloud Debian image'ı `www-data` kullanıcısını UID `33` ile çalıştırır. TrueNAS'ta:
+
+```bash
+# TrueNAS üzerinde
+chown -R 33:33 /mnt/storage/nextcloud/config
+chown -R 33:33 /mnt/storage/nextcloud/data
+```
+
+### Dosya Tarama
+
+Yeni dosyalar ekledikten sonra Nextcloud'un bunları görmesi için:
+
+```bash
+# Tüm kullanıcıların dosyalarını tara
 docker exec -u www-data nextcloud php occ files:scan --all
+
+# Belirli bir kullanıcının dosyalarını tara
+docker exec -u www-data nextcloud php occ files:scan USERNAME
+
+# Arka planda tarama (büyük veri setleri için)
+docker exec -u www-data nextcloud php occ files:scan --all &
 ```
 
-### 3. İlk Erişim
-- URL: https://cloud.yourdomain.com (domain kullanıyorsanız)
-- URL: http://server-ip (doğrudan erişim)
-- Admin kullanıcısı: Kurulum sihirbazında belirlenen değer
+## 🔧 Nextcloud OCC Komutları
 
-## 📋 Proje Fazları
+```bash
+# Maintenance mode aç/kapa
+docker exec -u www-data nextcloud php occ maintenance:mode --on
+docker exec -u www-data nextcloud php occ maintenance:mode --off
 
-| Faz | Açıklama | Süre | Durum |
-|-----|----------|------|-------|
-| 1 | Altyapı Kurulumu | 2-3 gün | ⬜ |
-| 2 | Bulut Entegrasyonu | 2-3 gün | ⬜ |
-| 3 | PoC ve Testler | 1-2 gün | ⬜ |
-| 4 | Veri Entegrasyonu | 1-2 gün | ⬜ |
-| 5 | Performans Tuning | 1-2 gün | ⬜ |
-| 6 | Teslim ve Eğitim | 1 gün | ⬜ |
+# Veritabanı indekslerini ekle
+docker exec -u www-data nextcloud php occ db:add-missing-indices
+
+# BigInt dönüşümü (büyük dosya ID'leri için)
+docker exec -u www-data nextcloud php occ db:convert-filecache-bigint
+
+# Cache temizle
+docker exec -u www-data nextcloud php occ files:cleanup
+docker exec -u www-data nextcloud php occ trashbin:cleanup --all-users
+
+# Sistem durumu
+docker exec -u www-data nextcloud php occ status
+
+# Yapılandırma listele
+docker exec -u www-data nextcloud php occ config:list
+
+# Trusted domain ekle
+docker exec -u www-data nextcloud php occ config:system:set trusted_domains 2 --value="yeni.domain.com"
+```
+
+## 🛠️ Sorun Giderme
+
+### Container Başlamıyor
+
+```bash
+# Detaylı log
+docker compose logs nextcloud
+
+# Container içine gir
+docker exec -it nextcloud bash
+
+# Servis durumunu kontrol et
+docker compose ps
+```
+
+### NFS Bağlantı Sorunları
+
+```bash
+# NFS mount durumu
+mount | grep nfs
+
+# Manuel mount
+sudo mount -t nfs TRUENAS_IP:/mnt/storage/nextcloud/data /mnt/nextcloud/data
+
+# NFS test
+showmount -e TRUENAS_IP
+```
+
+### Redis Bağlantı Sorunları
+
+```bash
+# Redis ping
+docker exec redis redis-cli -a REDIS_PASSWORD ping
+
+# Redis bilgi
+docker exec redis redis-cli -a REDIS_PASSWORD info
+```
+
+### Veritabanı Sorunları
+
+```bash
+# PostgreSQL'e bağlan
+docker exec -it postgres psql -U nextcloud -d nextcloud
+
+# Veritabanı boyutu
+docker exec postgres psql -U nextcloud -d nextcloud -c "SELECT pg_size_pretty(pg_database_size('nextcloud'));"
+```
+
+### Collabora Sorunları
+
+```bash
+# Collabora health check
+curl -s http://localhost:9980/hosting/capabilities
+
+# WOPI protokol test
+docker exec -u www-data nextcloud php occ richdocuments:activate-config
+```
 
 ## 🔐 Güvenlik
 
-- ✅ TLS 1.3 ile HTTPS
+- ✅ TLS 1.3 ile HTTPS (NPM)
 - ✅ Fail2ban brute-force koruması
 - ✅ Firewalld yapılandırması
 - ✅ SELinux desteği
 - ✅ 2FA desteği
-- ✅ Şifreli veri transferi (NFS over TLS opsiyonel)
+- ✅ Redis şifreli bağlantı
+- ✅ PostgreSQL şifreli bağlantı
 
-## 📞 Destek
+## 💾 Yedekleme
 
-Herhangi bir sorun için issue açın veya dokümantasyonu inceleyin.
+```bash
+# Manuel yedek al
+./scripts/backup.sh
+
+# Veritabanı yedeği
+docker exec postgres pg_dump -U nextcloud nextcloud > backup.sql
+
+# Veritabanını geri yükle
+cat backup.sql | docker exec -i postgres psql -U nextcloud -d nextcloud
+```
+
+## 📞 Destek ve Kaynaklar
+
+- [Nextcloud Dokümantasyonu](https://docs.nextcloud.com/)
+- [Collabora Online Dokümantasyonu](https://www.collaboraoffice.com/code/)
+- [TrueNAS Dokümantasyonu](https://www.truenas.com/docs/)
+- [Nginx Proxy Manager](https://nginxproxymanager.com/)
 
 ---
 
-**Versiyon:** 1.0.0  
+**Versiyon:** 2.0.0  
 **Son Güncelleme:** Ocak 2026  
-**Platform:** AlmaLinux 10
+**Platform:** AlmaLinux 10 + Docker  
+**Desteklenen Nextcloud:** v32 (stable-fpm)

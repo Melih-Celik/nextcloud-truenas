@@ -142,50 +142,19 @@ echo -e "${GREEN}Environment configured${NC}"
 # ==================================================
 # Set Permissions
 # ==================================================
-echo -e "\n${YELLOW}[4/6] Setting permissions...${NC}"
+echo -e "\n${YELLOW}[4/6] Checking NFS mount...${NC}"
 
-# www-data UID:GID (Nextcloud container default)
-WWW_DATA_UID=33
-WWW_DATA_GID=33
-
-# NFS mounts: ownership must be set on TrueNAS, not here
-# Check if we can write to NFS mounts
-NFS_PERMISSION_OK=true
-
-if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
-    NFS_PERMISSION_OK=false
-    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-data as www-data (UID $WWW_DATA_UID)${NC}"
+# Test if we can write to NFS mount at all
+if touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
+    rm -f /mnt/nextcloud-data/.write_test
+    echo -e "${GREEN}NFS data mount is writable${NC}"
 else
-    rm -f /mnt/nextcloud-data/.write_test
-    echo "  NFS data mount: writable"
+    echo -e "${RED}Cannot write to NFS mount at all!${NC}"
+    echo "Check TrueNAS NFS share permissions."
+    exit 1
 fi
 
-if [ "$NFS_PERMISSION_OK" = false ]; then
-    echo ""
-    echo -e "${YELLOW}NFS permissions need to be set on TrueNAS:${NC}"
-    echo ""
-    echo "  TrueNAS already has www-data user (UID 33)."
-    echo "  Just set the dataset ownership:"
-    echo ""
-    echo "  1. Go to Datasets > nextcloud/data > Edit Permissions"
-    echo "     - Owner: www-data (or UID 33)"
-    echo "     - Group: www-data (or GID 33)"
-    echo "     - Apply recursively"
-    echo ""
-    echo -e "${YELLOW}Or run this command on TrueNAS shell:${NC}"
-    echo "  chown -R www-data:www-data /mnt/storage/nextcloud/data"
-    echo ""
-    read -p "Press Enter after fixing TrueNAS permissions (or Ctrl+C to exit)..."
-    
-    # Re-check after user confirmation
-    if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
-        echo -e "${RED}Still cannot write to NFS mounts. Please fix permissions and try again.${NC}"
-        exit 1
-    fi
-    rm -f /mnt/nextcloud-data/.write_test
-fi
-
-echo -e "${GREEN}Permissions set${NC}"
+echo -e "${GREEN}NFS mount check passed${NC}"
 
 # ==================================================
 # Pull Docker Images

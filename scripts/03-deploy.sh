@@ -12,14 +12,30 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_FILE="$REPO_DIR/.install-config"
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    echo -e "${BLUE}ℹ${NC} Yapılandırma dosyası yüklendi: $CONFIG_FILE"
+fi
+
+# Default values (can be overridden by config file)
 PROJECT_DIR="${PROJECT_DIR:-/opt/nextcloud}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud-data}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Nextcloud Deployment Script          ${NC}"
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "  Proje Dizini : $PROJECT_DIR"
+echo "  Data Mount   : $NFS_DATA_MOUNT"
+echo ""
 
 # ==================================================
 # Pre-flight Checks
@@ -39,8 +55,8 @@ if ! docker compose version &> /dev/null; then
 fi
 
 # Check NFS mounts
-if ! mountpoint -q /mnt/nextcloud-data; then
-    echo -e "${RED}NFS data mount is not available. Run 02-mount-nfs.sh first.${NC}"
+if ! mountpoint -q "$NFS_DATA_MOUNT"; then
+    echo -e "${RED}NFS data mount is not available at $NFS_DATA_MOUNT. Run 02-mount-nfs.sh first.${NC}"
     exit 1
 fi
 
@@ -68,6 +84,12 @@ sudo chown $(whoami):$(whoami) "$PROJECT_DIR"
 cp "$DOCKER_DIR/docker-compose.yml" "$PROJECT_DIR/"
 echo "  Copied docker-compose.yml"
 
+# Copy override file if exists
+if [ -f "$DOCKER_DIR/docker-compose.override.yml" ]; then
+    cp "$DOCKER_DIR/docker-compose.override.yml" "$PROJECT_DIR/"
+    echo "  Copied docker-compose.override.yml"
+fi
+
 # Copy configs directory
 mkdir -p "$PROJECT_DIR/configs"
 cp -r "$DOCKER_DIR/configs/"* "$PROJECT_DIR/configs/" 2>/dev/null || true
@@ -92,7 +114,11 @@ WWW_DATA_GID=33
 
 # Create .env if it doesn't exist
 if [ ! -f ".env" ]; then
-    if [ -f "$DOCKER_DIR/.env.example" ]; then
+    # Check for .env in docker directory first
+    if [ -f "$DOCKER_DIR/.env" ]; then
+        cp "$DOCKER_DIR/.env" "$PROJECT_DIR/.env"
+        echo "  Created .env from docker/.env"
+    elif [ -f "$DOCKER_DIR/.env.example" ]; then
         cp "$DOCKER_DIR/.env.example" "$PROJECT_DIR/.env"
         echo "  Created .env from template"
         
@@ -115,7 +141,7 @@ if [ ! -f ".env" ]; then
         echo ""
         echo "  Credentials saved in: $PROJECT_DIR/.env"
     else
-        echo -e "${RED}.env.example not found${NC}"
+        echo -e "${RED}.env file not found. Please run setup.sh first or copy .env.example${NC}"
         exit 1
     fi
 else
@@ -145,8 +171,8 @@ echo -e "${GREEN}Environment configured${NC}"
 echo -e "\n${YELLOW}[4/6] Checking NFS mount...${NC}"
 
 # Test if we can write to NFS mount at all
-if touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
-    rm -f /mnt/nextcloud-data/.write_test
+if touch "$NFS_DATA_MOUNT/.write_test" 2>/dev/null; then
+    rm -f "$NFS_DATA_MOUNT/.write_test"
     echo -e "${GREEN}NFS data mount is writable${NC}"
 else
     echo -e "${RED}Cannot write to NFS mount at all!${NC}"

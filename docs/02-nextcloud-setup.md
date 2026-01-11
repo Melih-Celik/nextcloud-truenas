@@ -2,7 +2,30 @@
 
 Bu döküman, Docker üzerinde Nextcloud kurulumunu ve TrueNAS NFS entegrasyonunu anlatmaktadır.
 
-## 📋 Ön Gereksinimler
+## � Hızlı Kurulum (İnteraktif Sihirbaz)
+
+En kolay kurulum yöntemi interaktif sihirbazı kullanmaktır:
+
+```bash
+# Repo dizinine gidin
+cd nextcloud-truenas
+
+# İnteraktif kurulum sihirbazını başlatın
+./setup.sh
+```
+
+Sihirbaz size şunları soracak:
+- TrueNAS IP adresi
+- Nextcloud sunucu IP adresi
+- Domain kullanıp kullanmayacağınız
+- Nginx Proxy Manager kurulumu
+- Veritabanı şifreleri (otomatik oluşturulabilir)
+- Güvenlik ayarları
+- Ve daha fazlası...
+
+## 📋 Manuel Kurulum
+
+Aşağıdaki adımlar manuel kurulum içindir. İnteraktif kurulum kullandıysanız bu adımları atlayabilirsiniz.
 
 - AlmaLinux 10 Server
 - Minimum 8GB RAM, 4 CPU Core

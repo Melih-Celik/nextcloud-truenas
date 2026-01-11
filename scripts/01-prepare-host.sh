@@ -12,7 +12,28 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_FILE="$REPO_DIR/.install-config"
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    echo -e "${BLUE}ℹ${NC} Yapılandırma dosyası yüklendi: $CONFIG_FILE"
+fi
+
+# Default values (can be overridden by config file or environment)
+INSTALL_FAIL2BAN="${INSTALL_FAIL2BAN:-true}"
+CONFIGURE_FIREWALL="${CONFIGURE_FIREWALL:-true}"
+ENABLE_AUTO_UPDATES="${ENABLE_AUTO_UPDATES:-true}"
+FAIL2BAN_MAXRETRY="${FAIL2BAN_MAXRETRY:-5}"
+FAIL2BAN_BANTIME="${FAIL2BAN_BANTIME:-86400}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud-data}"
+PROJECT_DIR="${PROJECT_DIR:-/opt/nextcloud}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Nextcloud Host Preparation Script    ${NC}"
@@ -112,21 +133,19 @@ echo -e "${GREEN}SELinux container booleans configured${NC}"
 echo -e "\n${YELLOW}[4/9] Creating directory structure...${NC}"
 
 # NFS mount points
-mkdir -p /mnt/nextcloud-data
-mkdir -p /mnt/nextcloud-config
+mkdir -p "$NFS_DATA_MOUNT"
 
 # Application directory
-mkdir -p /opt/nextcloud/{configs/nginx,configs/php,configs/redis,db-data,redis-data,ssl,backups}
+mkdir -p "$PROJECT_DIR"/{configs/nginx,configs/php,configs/redis,db-data,redis-data,ssl,backups}
 
 # Set ownership
 if [ -n "$SUDO_USER" ]; then
-    chown -R $SUDO_USER:$SUDO_USER /opt/nextcloud
+    chown -R $SUDO_USER:$SUDO_USER "$PROJECT_DIR"
 fi
 
 echo -e "${GREEN}Created directories:${NC}"
-echo "  /mnt/nextcloud-data"
-echo "  /mnt/nextcloud-config"
-echo "  /opt/nextcloud"
+echo "  $NFS_DATA_MOUNT"
+echo "  $PROJECT_DIR"
 
 # ==================================================
 # 5. Configure SELinux (Basic - NFS related)
@@ -146,31 +165,36 @@ echo -e "${GREEN}SELinux NFS booleans configured${NC}"
 # ==================================================
 echo -e "\n${YELLOW}[6/9] Configuring firewall...${NC}"
 
-# Ensure firewalld is running
-systemctl enable --now firewalld
+if [ "$CONFIGURE_FIREWALL" = "true" ]; then
+    # Ensure firewalld is running
+    systemctl enable --now firewalld
 
-# Add services
-firewall-cmd --permanent --add-service=http
-firewall-cmd --permanent --add-service=https
-firewall-cmd --permanent --add-service=ssh
+    # Add services
+    firewall-cmd --permanent --add-service=http
+    firewall-cmd --permanent --add-service=https
+    firewall-cmd --permanent --add-service=ssh
 
-# Remove unnecessary services
-firewall-cmd --permanent --remove-service=cockpit 2>/dev/null || true
-firewall-cmd --permanent --remove-service=dhcpv6-client 2>/dev/null || true
+    # Remove unnecessary services
+    firewall-cmd --permanent --remove-service=cockpit 2>/dev/null || true
+    firewall-cmd --permanent --remove-service=dhcpv6-client 2>/dev/null || true
 
-# Reload firewall
-firewall-cmd --reload
+    # Reload firewall
+    firewall-cmd --reload
 
-echo -e "${GREEN}Firewall configured:${NC}"
-firewall-cmd --list-all
+    echo -e "${GREEN}Firewall configured:${NC}"
+    firewall-cmd --list-all
+else
+    echo -e "${YELLOW}Firewall yapılandırması atlandı (yapılandırmada devre dışı)${NC}"
+fi
 
 # ==================================================
 # 7. Configure Fail2ban
 # ==================================================
 echo -e "\n${YELLOW}[7/9] Configuring Fail2ban...${NC}"
 
-# Create Nextcloud filter
-cat > /etc/fail2ban/filter.d/nextcloud.conf << 'EOF'
+if [ "$INSTALL_FAIL2BAN" = "true" ]; then
+    # Create Nextcloud filter
+    cat > /etc/fail2ban/filter.d/nextcloud.conf << 'EOF'
 [Definition]
 _groupsre = (?:(?:,?\s*"\w+":(?:"[^"]+"|\w+))*)
 failregex = ^\{%(_groupsre)s,?\s*"remoteAddr":"<HOST>"%(_groupsre)s,?\s*"message":"Login failed:
@@ -178,24 +202,24 @@ failregex = ^\{%(_groupsre)s,?\s*"remoteAddr":"<HOST>"%(_groupsre)s,?\s*"message
 datepattern = ,?\s*"time"\s*:\s*"%%Y-%%m-%%d[T ]%%H:%%M:%%S(%%z)?"
 EOF
 
-# Create Nextcloud jail
-cat > /etc/fail2ban/jail.d/nextcloud.local << 'EOF'
+    # Create Nextcloud jail with configurable values
+    cat > /etc/fail2ban/jail.d/nextcloud.local << EOF
 [nextcloud]
 backend = auto
 enabled = true
 port = http,https
 protocol = tcp
 filter = nextcloud
-maxretry = 5
-bantime = 86400
+maxretry = ${FAIL2BAN_MAXRETRY}
+bantime = ${FAIL2BAN_BANTIME}
 findtime = 600
-logpath = /mnt/nextcloud-data/nextcloud.log
+logpath = ${NFS_DATA_MOUNT}/nextcloud.log
 banaction = firewallcmd-rich-rules[actiontype=<multiport>]
 banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
 EOF
 
-# Create SSH jail
-cat > /etc/fail2ban/jail.d/sshd.local << 'EOF'
+    # Create SSH jail
+    cat > /etc/fail2ban/jail.d/sshd.local << 'EOF'
 [sshd]
 enabled = true
 port = ssh
@@ -207,10 +231,15 @@ findtime = 600
 banaction = firewallcmd-rich-rules[actiontype=<multiport>]
 EOF
 
-# Start Fail2ban
-systemctl enable --now fail2ban
+    # Start Fail2ban
+    systemctl enable --now fail2ban
 
-echo -e "${GREEN}Fail2ban configured with Nextcloud filter${NC}"
+    echo -e "${GREEN}Fail2ban configured with Nextcloud filter${NC}"
+    echo "  Max retry: ${FAIL2BAN_MAXRETRY}"
+    echo "  Ban time: ${FAIL2BAN_BANTIME} seconds"
+else
+    echo -e "${YELLOW}Fail2ban kurulumu atlandı (yapılandırmada devre dışı)${NC}"
+fi
 
 # ==================================================
 # 8. System Tuning
@@ -276,10 +305,11 @@ echo -e "${GREEN}NFS client services enabled${NC}"
 # ==================================================
 echo -e "\n${YELLOW}Configuring automatic security updates...${NC}"
 
-dnf install -y dnf-automatic
+if [ "$ENABLE_AUTO_UPDATES" = "true" ]; then
+    dnf install -y dnf-automatic
 
-# Configure for security updates only
-cat > /etc/dnf/automatic.conf << 'EOF'
+    # Configure for security updates only
+    cat > /etc/dnf/automatic.conf << 'EOF'
 [commands]
 upgrade_type = security
 random_sleep = 360
@@ -300,9 +330,12 @@ email_host = localhost
 debuglevel = 1
 EOF
 
-systemctl enable --now dnf-automatic.timer
+    systemctl enable --now dnf-automatic.timer
 
-echo -e "${GREEN}Automatic security updates configured${NC}"
+    echo -e "${GREEN}Automatic security updates configured${NC}"
+else
+    echo -e "${YELLOW}Otomatik güncellemeler atlandı (yapılandırmada devre dışı)${NC}"
+fi
 
 # ==================================================
 # Summary

@@ -13,7 +13,19 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_FILE="$REPO_DIR/.install-config"
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    echo -e "${BLUE}ℹ${NC} Yapılandırma dosyası yüklendi: $CONFIG_FILE"
+fi
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  NFS Mount Configuration Script       ${NC}"
@@ -27,11 +39,19 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # ==================================================
-# Configuration - UPDATE THESE VALUES
+# Configuration - from config file or defaults
 # ==================================================
 TRUENAS_IP="${TRUENAS_IP:-192.168.1.20}"
-DATA_EXPORT="/mnt/storage/nextcloud/data"
-DATA_MOUNT="/mnt/nextcloud-data"
+NFS_DATA_EXPORT="${NFS_DATA_EXPORT:-/mnt/storage/nextcloud/data}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud-data}"
+
+# Show current configuration
+echo ""
+echo -e "${YELLOW}Yapılandırma:${NC}"
+echo "  TrueNAS IP    : $TRUENAS_IP"
+echo "  NFS Export    : $NFS_DATA_EXPORT"
+echo "  Mount Noktası : $NFS_DATA_MOUNT"
+echo ""
 
 # NFS Mount Options (optimized for performance)
 NFS_OPTS="rw,hard,intr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev"
@@ -107,23 +127,23 @@ fi
 echo -e "\n${YELLOW}[5/5] Setting up mount points and fstab...${NC}"
 
 # Create mount directory
-mkdir -p $DATA_MOUNT
+mkdir -p $NFS_DATA_MOUNT
 
 # Test mount for data
 echo "Testing mount for data directory..."
-if mount -t nfs4 $TRUENAS_IP:$DATA_EXPORT $DATA_MOUNT -o $NFS_OPTS; then
+if mount -t nfs4 $TRUENAS_IP:$NFS_DATA_EXPORT $NFS_DATA_MOUNT -o $NFS_OPTS; then
     echo -e "${GREEN}Data mount successful!${NC}"
     
     # Test write
-    if touch $DATA_MOUNT/.mount_test 2>/dev/null; then
-        rm $DATA_MOUNT/.mount_test
+    if touch $NFS_DATA_MOUNT/.mount_test 2>/dev/null; then
+        rm $NFS_DATA_MOUNT/.mount_test
         echo -e "${GREEN}Write test passed${NC}"
     else
         echo -e "${YELLOW}Warning: Cannot write to data mount. Check permissions on TrueNAS.${NC}"
     fi
     
     # Unmount for fstab configuration
-    umount $DATA_MOUNT
+    umount $NFS_DATA_MOUNT
 else
     echo -e "${RED}Failed to mount data directory${NC}"
     exit 1
@@ -133,11 +153,11 @@ fi
 cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d%H%M%S)
 
 # Check if entry already exists
-if grep -q "$DATA_MOUNT" /etc/fstab; then
+if grep -q "$NFS_DATA_MOUNT" /etc/fstab; then
     echo -e "${YELLOW}Data mount entry already exists in fstab, skipping...${NC}"
 else
     echo "# Nextcloud Data - TrueNAS NFS" >> /etc/fstab
-    echo "$TRUENAS_IP:$DATA_EXPORT    $DATA_MOUNT    nfs4    $NFS_OPTS    0    0" >> /etc/fstab
+    echo "$TRUENAS_IP:$NFS_DATA_EXPORT    $NFS_DATA_MOUNT    nfs4    $NFS_OPTS    0    0" >> /etc/fstab
     echo -e "${GREEN}Added data mount to fstab${NC}"
 fi
 
@@ -157,7 +177,7 @@ echo -e "${GREEN}  NFS Mount Configuration Complete!    ${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Mount point:"
-echo "  Data: $DATA_MOUNT"
+echo "  Data: $NFS_DATA_MOUNT"
 echo ""
 echo "fstab entry added. Mount will persist after reboot."
 echo ""

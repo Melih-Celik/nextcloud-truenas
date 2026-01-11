@@ -2,7 +2,31 @@
 
 60TB kapasiteli, self-hosted bulut depolama çözümü.
 
-## 📐 Sistem Mimarisi
+## � Hızlı Başlangıç (İnteraktif Kurulum)
+
+En kolay kurulum yöntemi interaktif kurulum sihirbazını kullanmaktır:
+
+```bash
+# Repoyu klonlayın
+git clone https://github.com/your-repo/nextcloud-truenas.git
+cd nextcloud-truenas
+
+# İnteraktif kurulum sihirbazını başlatın
+./setup.sh
+```
+
+Kurulum sihirbazı size şu konularda sorular soracak:
+- 📡 Ağ yapılandırması (TrueNAS IP, Nextcloud sunucu IP)
+- 🌐 Domain ve SSL ayarları
+- 🔀 Reverse proxy seçimi (Nginx Proxy Manager, harici proxy, veya doğrudan erişim)
+- 💾 NFS depolama ayarları
+- ☁️ Nextcloud admin bilgileri
+- 🗄️ Veritabanı şifreleri (otomatik oluşturulabilir)
+- 📧 E-posta bildirimleri (opsiyonel)
+- 🔐 Güvenlik ayarları (Fail2ban, Firewall)
+- 💾 Yedekleme yapılandırması
+
+## �📐 Sistem Mimarisi
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -61,7 +85,9 @@
 
 ```
 nextcloud-truenas/
+├── setup.sh                       # 🆕 İnteraktif kurulum sihirbazı
 ├── README.md                      # Bu dosya
+├── .install-config                # Kurulum yapılandırması (setup.sh tarafından oluşturulur)
 ├── docs/
 │   ├── 01-truenas-setup.md       # TrueNAS kurulum rehberi
 │   ├── 02-nextcloud-setup.md     # Nextcloud kurulum rehberi (AlmaLinux 10)
@@ -70,6 +96,8 @@ nextcloud-truenas/
 │   └── 05-maintenance.md         # Bakım prosedürleri
 ├── docker/
 │   ├── docker-compose.yml        # Ana Docker Compose
+│   ├── docker-compose.override.yml # NPM için override (opsiyonel)
+│   ├── .env                      # Environment değişkenleri (setup.sh tarafından oluşturulur)
 │   ├── .env.example              # Ortam değişkenleri örneği
 │   └── configs/
 │       ├── nginx/
@@ -88,12 +116,23 @@ nextcloud-truenas/
     └── nextcloud-config.php      # Nextcloud config örneği
 ```
 
-## 🚀 Hızlı Başlangıç
+## 🚀 Kurulum Yöntemleri
 
-### 1. TrueNAS Kurulumu
+### Yöntem 1: İnteraktif Kurulum (Önerilen)
+
+```bash
+# İnteraktif sihirbazı başlat
+./setup.sh
+
+# Sihirbaz sorulara cevap verdikten sonra kurulumu başlatacak
+```
+
+### Yöntem 2: Manuel Kurulum
+
+#### 1. TrueNAS Kurulumu
 [TrueNAS Kurulum Rehberi](docs/01-truenas-setup.md)
 
-### 2. Nextcloud Sunucusu Hazırlığı (AlmaLinux 10)
+#### 2. Nextcloud Sunucusu Hazırlığı (AlmaLinux 10)
 ```bash
 # Host'u hazırla
 sudo ./scripts/01-prepare-host.sh
@@ -109,9 +148,22 @@ nano docker/.env
 ./scripts/03-deploy.sh
 ```
 
+### Setup.sh Komut Satırı Seçenekleri
+
+```bash
+./setup.sh              # İnteraktif menü
+./setup.sh --help       # Yardım
+./setup.sh --config     # Sadece yapılandırma topla
+./setup.sh --generate   # Sadece dosyaları oluştur
+./setup.sh --install    # Mevcut yapılandırma ile kurulum başlat
+./setup.sh --show       # Mevcut yapılandırmayı göster
+./setup.sh --reset      # Yapılandırmayı sıfırla
+```
+
 ### 3. İlk Erişim
-- URL: https://cloud.yourdomain.com
-- Admin kullanıcısı: `.env` dosyasında tanımlı
+- URL: https://cloud.yourdomain.com (domain kullanıyorsanız)
+- URL: http://server-ip (doğrudan erişim)
+- Admin kullanıcısı: Kurulum sihirbazında belirlenen değer
 
 ## 📋 Proje Fazları
 

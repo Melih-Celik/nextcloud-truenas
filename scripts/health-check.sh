@@ -10,15 +10,33 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_FILE="$REPO_DIR/.install-config"
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+# Configuration from config file or defaults
 PROJECT_DIR="${PROJECT_DIR:-/opt/nextcloud}"
 TRUENAS_IP="${TRUENAS_IP:-192.168.1.20}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud-data}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Nextcloud System Health Check        ${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo "Timestamp: $(date)"
+echo ""
+echo "Configuration:"
+echo "  Project Dir  : $PROJECT_DIR"
+echo "  TrueNAS IP   : $TRUENAS_IP"
+echo "  Data Mount   : $NFS_DATA_MOUNT"
 echo ""
 
 ERRORS=0
@@ -47,18 +65,11 @@ done
 # ==================================================
 echo -e "\n${YELLOW}[NFS Mounts]${NC}"
 
-if mountpoint -q /mnt/nextcloud-data; then
-    SIZE=$(df -h /mnt/nextcloud-data | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')
+if mountpoint -q "$NFS_DATA_MOUNT"; then
+    SIZE=$(df -h "$NFS_DATA_MOUNT" | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')
     echo -e "  Data mount: ${GREEN}✓ Mounted${NC} - $SIZE"
 else
     echo -e "  Data mount: ${RED}✗ Not mounted${NC}"
-    ERRORS=$((ERRORS + 1))
-fi
-
-if mountpoint -q /mnt/nextcloud-config; then
-    echo -e "  Config mount: ${GREEN}✓ Mounted${NC}"
-else
-    echo -e "  Config mount: ${RED}✗ Not mounted${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -188,9 +199,9 @@ else
 fi
 
 # NFS data
-if mountpoint -q /mnt/nextcloud-data; then
-    NFS_USE=$(df -h /mnt/nextcloud-data | tail -1 | awk '{print $5}' | tr -d '%')
-    NFS_SIZE=$(df -h /mnt/nextcloud-data | tail -1 | awk '{print $3 "/" $2}')
+if mountpoint -q "$NFS_DATA_MOUNT"; then
+    NFS_USE=$(df -h "$NFS_DATA_MOUNT" | tail -1 | awk '{print $5}' | tr -d '%')
+    NFS_SIZE=$(df -h "$NFS_DATA_MOUNT" | tail -1 | awk '{print $3 "/" $2}')
     if [ $NFS_USE -lt 80 ]; then
         echo -e "  NFS Data: ${GREEN}✓ $NFS_SIZE ($NFS_USE%)${NC}"
     elif [ $NFS_USE -lt 90 ]; then

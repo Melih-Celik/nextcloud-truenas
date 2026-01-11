@@ -33,6 +33,7 @@ services:
     image: nextcloud:29-fpm-alpine
     container_name: nextcloud
     restart: unless-stopped
+    user: "${NEXTCLOUD_UID:-2000}:${NEXTCLOUD_GID:-2000}"
     environment:
       # Database
       - POSTGRES_HOST=postgres
@@ -146,6 +147,7 @@ services:
     image: nextcloud:29-fpm-alpine
     container_name: nextcloud-cron
     restart: unless-stopped
+    user: "${NEXTCLOUD_UID:-2000}:${NEXTCLOUD_GID:-2000}"
     entrypoint: /cron.sh
     environment:
       - POSTGRES_HOST=postgres

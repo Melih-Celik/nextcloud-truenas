@@ -92,6 +92,10 @@ echo -e "\n${YELLOW}[3/8] Configuring environment...${NC}"
 
 cd "$PROJECT_DIR"
 
+# Nextcloud user UID:GID
+NEXTCLOUD_UID=2000
+NEXTCLOUD_GID=2000
+
 # Create .env if it doesn't exist
 if [ ! -f ".env" ]; then
     if [ -f "$DOCKER_DIR/.env.example" ]; then
@@ -111,6 +115,7 @@ if [ ! -f ".env" ]; then
         echo -e "${GREEN}  Generated random passwords${NC}"
         echo ""
         echo -e "${YELLOW}  IMPORTANT: Save these credentials!${NC}"
+        echo "  Nextcloud User: nextcloud (UID: $NEXTCLOUD_UID, GID: $NEXTCLOUD_GID)"
         echo "  PostgreSQL Password: $POSTGRES_PASSWORD"
         echo "  Redis Password: $REDIS_PASSWORD"
         echo "  Nextcloud Admin Password: $NEXTCLOUD_ADMIN_PASSWORD"
@@ -146,25 +151,32 @@ echo -e "${GREEN}Environment configured${NC}"
 # ==================================================
 echo -e "\n${YELLOW}[4/8] Setting permissions...${NC}"
 
-# www-data UID:GID is typically 33:33
-WWW_DATA_UID=33
-WWW_DATA_GID=33
+# Nextcloud user UID:GID (must match TrueNAS)
+NEXTCLOUD_UID=2000
+NEXTCLOUD_GID=2000
+
+# Create nextcloud user on this host if it doesn't exist
+if ! id -u nextcloud &>/dev/null; then
+    echo "Creating nextcloud user (UID $NEXTCLOUD_UID)..."
+    groupadd -g $NEXTCLOUD_GID nextcloud 2>/dev/null || true
+    useradd -u $NEXTCLOUD_UID -g $NEXTCLOUD_GID -M -s /sbin/nologin nextcloud 2>/dev/null || true
+fi
 
 # NFS mounts: ownership must be set on TrueNAS, not here
 # Check if we can write to NFS mounts
 NFS_PERMISSION_OK=true
 
-if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
+if ! sudo -u nextcloud touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
     NFS_PERMISSION_OK=false
-    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-data as www-data (UID 33)${NC}"
+    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-data as nextcloud (UID $NEXTCLOUD_UID)${NC}"
 else
     rm -f /mnt/nextcloud-data/.write_test
     echo "  NFS data mount: writable"
 fi
 
-if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-config/.write_test 2>/dev/null; then
+if ! sudo -u nextcloud touch /mnt/nextcloud-config/.write_test 2>/dev/null; then
     NFS_PERMISSION_OK=false
-    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-config as www-data (UID 33)${NC}"
+    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-config as nextcloud (UID $NEXTCLOUD_UID)${NC}"
 else
     rm -f /mnt/nextcloud-config/.write_test
     echo "  NFS config mount: writable"
@@ -173,20 +185,32 @@ fi
 if [ "$NFS_PERMISSION_OK" = false ]; then
     echo ""
     echo -e "${YELLOW}NFS permissions need to be set on TrueNAS:${NC}"
-    echo "  1. Open TrueNAS Web UI"
-    echo "  2. Go to Datasets > nextcloud/data > Edit Permissions"
-    echo "  3. Set User: 33, Group: 33 (or create www-data user with UID 33)"
-    echo "  4. Apply recursively"
-    echo "  5. Do the same for nextcloud/config dataset"
+    echo ""
+    echo "  1. Create user 'nextcloud' with UID $NEXTCLOUD_UID on TrueNAS:"
+    echo "     - Go to Credentials > Local Users > Add"
+    echo "     - Username: nextcloud"
+    echo "     - UID: $NEXTCLOUD_UID"
+    echo "     - Primary Group: Create new group 'nextcloud' with GID $NEXTCLOUD_GID"
+    echo "     - Home Directory: /nonexistent"
+    echo "     - Shell: nologin"
+    echo ""
+    echo "  2. Set dataset permissions:"
+    echo "     - Datasets > nextcloud/data > Edit Permissions"
+    echo "     - Owner: nextcloud"
+    echo "     - Group: nextcloud"
+    echo "     - Apply recursively"
+    echo "     - Do the same for nextcloud/config"
     echo ""
     echo -e "${YELLOW}Or run these commands on TrueNAS shell:${NC}"
-    echo "  chown -R 33:33 /mnt/storage/nextcloud/data"
-    echo "  chown -R 33:33 /mnt/storage/nextcloud/config"
+    echo "  pw groupadd nextcloud -g $NEXTCLOUD_GID"
+    echo "  pw useradd nextcloud -u $NEXTCLOUD_UID -g nextcloud -s /usr/sbin/nologin -d /nonexistent"
+    echo "  chown -R nextcloud:nextcloud /mnt/storage/nextcloud/data"
+    echo "  chown -R nextcloud:nextcloud /mnt/storage/nextcloud/config"
     echo ""
     read -p "Press Enter after fixing TrueNAS permissions (or Ctrl+C to exit)..."
     
     # Re-check after user confirmation
-    if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
+    if ! sudo -u nextcloud touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
         echo -e "${RED}Still cannot write to NFS mounts. Please fix permissions and try again.${NC}"
         exit 1
     fi
@@ -194,8 +218,8 @@ if [ "$NFS_PERMISSION_OK" = false ]; then
 fi
 
 # Set ownership on local directories
-chown -R $WWW_DATA_UID:$WWW_DATA_GID db-data 2>/dev/null || true
-chown -R $WWW_DATA_UID:$WWW_DATA_GID redis-data 2>/dev/null || true
+chown -R $NEXTCLOUD_UID:$NEXTCLOUD_GID db-data 2>/dev/null || true
+chown -R $NEXTCLOUD_UID:$NEXTCLOUD_GID redis-data 2>/dev/null || true
 
 echo -e "${GREEN}Permissions set${NC}"
 
@@ -271,14 +295,17 @@ done
 # ==================================================
 echo -e "\n${YELLOW}Running post-deployment configuration...${NC}"
 
-# Set cron mode
-docker exec -u www-data nextcloud php occ background:cron 2>/dev/null || true
+# Wait a bit more for Nextcloud to fully initialize
+sleep 5
+
+# Set cron mode (run as the nextcloud user inside container)
+docker exec nextcloud php occ background:cron 2>/dev/null || true
 
 # Add missing indices
-docker exec -u www-data nextcloud php occ db:add-missing-indices 2>/dev/null || true
+docker exec nextcloud php occ db:add-missing-indices 2>/dev/null || true
 
 # Convert filecache bigint
-docker exec -u www-data nextcloud php occ db:convert-filecache-bigint --no-interaction 2>/dev/null || true
+docker exec nextcloud php occ db:convert-filecache-bigint --no-interaction 2>/dev/null || true
 
 # ==================================================
 # Summary

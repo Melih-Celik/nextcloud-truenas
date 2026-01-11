@@ -276,8 +276,9 @@ collect_storage_config() {
     # TrueNAS base path
     print_info "TrueNAS'ta oluşturduğunuz NFS dizin yapısı:"
     echo "  nextcloud/config   - Nextcloud yapılandırması"
-    echo "  nextcloud/data     - Kullanıcı verileri"
-    echo "  nextcloud/database - PostgreSQL veritabanı"
+    echo "  nextcloud/data     - Kullanıcı verileri (60TB+)"
+    echo ""
+    print_info "NOT: PostgreSQL veritabanı performans için yerel Docker volume'da saklanır."
     echo ""
     
     ask_input "TrueNAS NFS base path" "/mnt/storage/nextcloud" NFS_BASE_EXPORT
@@ -285,12 +286,10 @@ collect_storage_config() {
     # NFS Export paths (derived from base)
     NFS_CONFIG_EXPORT="${NFS_BASE_EXPORT}/config"
     NFS_DATA_EXPORT="${NFS_BASE_EXPORT}/data"
-    NFS_DATABASE_EXPORT="${NFS_BASE_EXPORT}/database"
     
     print_info "NFS export yolları:"
     echo "  Config   : $NFS_CONFIG_EXPORT"
     echo "  Data     : $NFS_DATA_EXPORT"
-    echo "  Database : $NFS_DATABASE_EXPORT"
     echo ""
     
     # Mount points
@@ -298,7 +297,6 @@ collect_storage_config() {
     
     NFS_CONFIG_MOUNT="${NFS_BASE_MOUNT}/config"
     NFS_DATA_MOUNT="${NFS_BASE_MOUNT}/data"
-    NFS_DATABASE_MOUNT="${NFS_BASE_MOUNT}/database"
     
     # Project directory
     ask_input "Nextcloud proje dizini" "/opt/nextcloud" PROJECT_DIR
@@ -614,11 +612,9 @@ PROXY_TRUSTED_NETWORK="${PROXY_TRUSTED_NETWORK:-172.20.0.0/16}"
 NFS_BASE_EXPORT="${NFS_BASE_EXPORT:-/mnt/storage/nextcloud}"
 NFS_CONFIG_EXPORT="${NFS_CONFIG_EXPORT:-$NFS_BASE_EXPORT/config}"
 NFS_DATA_EXPORT="${NFS_DATA_EXPORT:-$NFS_BASE_EXPORT/data}"
-NFS_DATABASE_EXPORT="${NFS_DATABASE_EXPORT:-$NFS_BASE_EXPORT/database}"
 NFS_BASE_MOUNT="${NFS_BASE_MOUNT:-/mnt/nextcloud}"
 NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-$NFS_BASE_MOUNT/config}"
 NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-$NFS_BASE_MOUNT/data}"
-NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-$NFS_BASE_MOUNT/database}"
 PROJECT_DIR="$PROJECT_DIR"
 
 # ==== Büyük Veri Seti ====
@@ -726,10 +722,10 @@ PHP_UPLOAD_LIMIT=$PHP_UPLOAD_LIMIT
 
 TRUENAS_IP=$TRUENAS_IP
 
-# NFS Mount Points (3 ayrı mount)
+# NFS Mount Points (config + data only)
+# NOTE: PostgreSQL database is stored locally for better performance
 NFS_CONFIG_MOUNT=$NFS_CONFIG_MOUNT
 NFS_DATA_MOUNT=$NFS_DATA_MOUNT
-NFS_DATABASE_MOUNT=$NFS_DATABASE_MOUNT
 
 # --------------------------------------------------
 # LARGE DATASET SETTINGS (60TB+)

@@ -2,10 +2,14 @@
 # ==================================================
 # NFS Mount Script for TrueNAS Integration
 # ==================================================
-# This script mounts 3 NFS shares from TrueNAS:
+# This script mounts 2 NFS shares from TrueNAS:
 #   - config   : Nextcloud configuration
 #   - data     : User data (60TB+)
-#   - database : PostgreSQL database
+#
+# NOTE: PostgreSQL database is stored locally in Docker
+# volume for better performance. NFS is not suitable
+# for database workloads.
+#
 # Platform: AlmaLinux 10
 # Run as: sudo ./02-mount-nfs.sh
 # ==================================================

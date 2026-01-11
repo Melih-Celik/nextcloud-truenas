@@ -33,7 +33,7 @@ PROJECT_DIR="${PROJECT_DIR:-/opt/nextcloud}"
 NFS_BASE_MOUNT="${NFS_BASE_MOUNT:-/mnt/nextcloud}"
 NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-$NFS_BASE_MOUNT/config}"
 NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-$NFS_BASE_MOUNT/data}"
-NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-$NFS_BASE_MOUNT/database}"
+# NOTE: PostgreSQL database is stored locally in Docker volume
 
 print_banner() {
     clear
@@ -83,7 +83,7 @@ echo -e "${YELLOW}Mevcut Yapilandirma:${NC}"
 echo "  Proje Dizini : $PROJECT_DIR"
 echo "  Config Mount : $NFS_CONFIG_MOUNT"
 echo "  Data Mount   : $NFS_DATA_MOUNT"
-echo "  DB Mount     : $NFS_DATABASE_MOUNT"
+echo "  Database     : Local Docker volume (postgres-data)"
 echo ""
 
 read -p "Seciminiz [1-5]: " choice
@@ -194,7 +194,6 @@ case $choice in
         print_info "NFS mount'lari kaldiriliyor..."
         umount "$NFS_CONFIG_MOUNT" 2>/dev/null || true
         umount "$NFS_DATA_MOUNT" 2>/dev/null || true
-        umount "$NFS_DATABASE_MOUNT" 2>/dev/null || true
         print_success "NFS mount'lari kaldirildi"
         
         # Remove from fstab
@@ -207,7 +206,6 @@ case $choice in
         # Remove mount directories
         rmdir "$NFS_CONFIG_MOUNT" 2>/dev/null || true
         rmdir "$NFS_DATA_MOUNT" 2>/dev/null || true
-        rmdir "$NFS_DATABASE_MOUNT" 2>/dev/null || true
         rmdir "$NFS_BASE_MOUNT" 2>/dev/null || true
         
         # Remove project directory
@@ -289,15 +287,11 @@ case $choice in
             print_error "  Data verileri silindi"
         fi
         
-        if mountpoint -q "$NFS_DATABASE_MOUNT" 2>/dev/null; then
-            rm -rf "$NFS_DATABASE_MOUNT"/* 2>/dev/null || true
-            print_error "  Database verileri silindi"
-        fi
+        # NOTE: PostgreSQL data is in local Docker volume and will be removed with volumes
         
         # Unmount NFS
         umount "$NFS_CONFIG_MOUNT" 2>/dev/null || true
         umount "$NFS_DATA_MOUNT" 2>/dev/null || true
-        umount "$NFS_DATABASE_MOUNT" 2>/dev/null || true
         
         # Remove from fstab
         cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d%H%M%S)
@@ -307,7 +301,6 @@ case $choice in
         # Remove directories
         rmdir "$NFS_CONFIG_MOUNT" 2>/dev/null || true
         rmdir "$NFS_DATA_MOUNT" 2>/dev/null || true
-        rmdir "$NFS_DATABASE_MOUNT" 2>/dev/null || true
         rmdir "$NFS_BASE_MOUNT" 2>/dev/null || true
         
         # Remove project directory

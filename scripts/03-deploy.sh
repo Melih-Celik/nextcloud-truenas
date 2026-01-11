@@ -197,12 +197,13 @@ check_nfs_mount() {
 
 NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-/mnt/nextcloud/config}"
 NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud/data}"
-NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-/mnt/nextcloud/database}"
+
+# NOTE: PostgreSQL uses local Docker volume for better performance
+# NFS is not suitable for database workloads
 
 echo "Checking NFS mounts..."
 check_nfs_mount "$NFS_CONFIG_MOUNT" "Config"
 check_nfs_mount "$NFS_DATA_MOUNT" "Data"
-check_nfs_mount "$NFS_DATABASE_MOUNT" "Database"
 
 echo -e "${GREEN}NFS mount check completed${NC}"
 

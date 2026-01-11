@@ -57,11 +57,14 @@ services:
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-1024M}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-16G}
     volumes:
-      # App files (local)
-      - nextcloud-app:/var/www/html
+      # Nextcloud config (NFS from TrueNAS)
+      - ${NFS_CONFIG_MOUNT:-/mnt/nextcloud/config}:/var/www/html/config
       
-      # User data (NFS from TrueNAS)
-      - ${NFS_DATA_MOUNT:-/mnt/nextcloud-data}:/var/www/html/data
+      # User data (NFS from TrueNAS - 60TB)
+      - ${NFS_DATA_MOUNT:-/mnt/nextcloud/data}:/var/www/html/data
+      
+      # App files (local for performance)
+      - nextcloud-app:/var/www/html
       
       # Custom PHP config
       - ./configs/php/custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
@@ -79,7 +82,7 @@ services:
       retries: 3
 
   # ===========================================
-  # POSTGRESQL DATABASE
+  # POSTGRESQL DATABASE (NFS from TrueNAS)
   # ===========================================
   postgres:
     image: postgres:${POSTGRES_TAG:-16-alpine}
@@ -91,7 +94,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      - ./db-data:/var/lib/postgresql/data
+      # Database storage (NFS from TrueNAS)
+      - ${NFS_DATABASE_MOUNT:-/mnt/nextcloud/database}:/var/lib/postgresql/data
     networks:
       - nextcloud-network
     healthcheck:
@@ -99,20 +103,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # PostgreSQL performance tuning for Nextcloud
+    # PostgreSQL performance tuning for Nextcloud (60TB data)
     command: >
       postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=1GB
-      -c work_mem=64MB
-      -c maintenance_work_mem=256MB
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c work_mem=128MB
+      -c maintenance_work_mem=512MB
       -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
+      -c wal_buffers=32MB
       -c default_statistics_target=100
       -c random_page_cost=1.1
       -c effective_io_concurrency=200
-      -c max_connections=100
+      -c max_connections=200
       -c log_min_duration_statement=1000
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
 
   # ===========================================
   # REDIS CACHE
@@ -154,8 +161,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_HOST_PASSWORD=${REDIS_PASSWORD:-}
     volumes:
+      - ${NFS_CONFIG_MOUNT:-/mnt/nextcloud/config}:/var/www/html/config
+      - ${NFS_DATA_MOUNT:-/mnt/nextcloud/data}:/var/www/html/data
       - nextcloud-app:/var/www/html
-      - ${NFS_DATA_MOUNT:-/mnt/nextcloud-data}:/var/www/html/data
     depends_on:
       - nextcloud
     networks:

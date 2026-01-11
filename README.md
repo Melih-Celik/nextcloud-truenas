@@ -108,13 +108,33 @@ nextcloud-truenas/
 │           └── redis.conf        # Redis yapılandırması
 ├── scripts/
 │   ├── 01-prepare-host.sh        # AlmaLinux host hazırlık scripti
-│   ├── 02-mount-nfs.sh           # NFS mount scripti
+│   ├── 02-mount-nfs.sh           # NFS mount scripti (3 mount: config, data, database)
 │   ├── 03-deploy.sh              # Deployment scripti
 │   ├── backup.sh                 # Yedekleme scripti
-│   └── health-check.sh           # Sağlık kontrolü
+│   ├── health-check.sh           # Sağlık kontrolü
+│   ├── uninstall.sh              # 🆕 Kaldırma/temizlik scripti
+│   ├── optimize-large-data.sh    # 🆕 60TB+ veri optimizasyon aracı
+│   └── data-migration.sh         # Veri göç scripti
 └── configs/
     └── nextcloud-config.php      # Nextcloud config örneği
 ```
+
+## 💾 TrueNAS NFS Dizin Yapısı
+
+TrueNAS'ta 3 ayrı dataset oluşturulmalıdır:
+
+```
+/mnt/storage/nextcloud/
+├── config/     # Nextcloud yapılandırma dosyaları
+├── data/       # Kullanıcı verileri (60TB)
+└── database/   # PostgreSQL veritabanı
+```
+
+Bu yapı şu avantajları sağlar:
+- **Ayrı snapshot politikaları**: Config ve database için daha sık snapshot
+- **Farklı ZFS ayarları**: Data için büyük recordsize, database için küçük
+- **Kolay yedekleme**: Her bileşeni ayrı yedekleyebilme
+- **Performans**: Veritabanı I/O'sunun data I/O'sundan etkilenmemesi
 
 ## 🚀 Kurulum Yöntemleri
 
@@ -158,6 +178,50 @@ nano docker/.env
 ./setup.sh --install    # Mevcut yapılandırma ile kurulum başlat
 ./setup.sh --show       # Mevcut yapılandırmayı göster
 ./setup.sh --reset      # Yapılandırmayı sıfırla
+```
+
+## 🗑️ Kaldırma (Uninstall)
+
+Nextcloud kurulumunu kaldırmak için:
+
+```bash
+sudo ./scripts/uninstall.sh
+```
+
+Seçenekler:
+1. Sadece container'ları durdur (veriler korunur)
+2. Container ve volume'ları sil (NFS verileri korunur)
+3. Tam temizlik - Docker + NFS mount kaldır (TrueNAS verileri korunur)
+4. TAM SİLME - Her şeyi sil (DİKKAT: Veriler dahil!)
+
+## 📊 60TB+ Veri Yönetimi
+
+Büyük veri setleri için optimizasyon aracı:
+
+```bash
+./scripts/optimize-large-data.sh
+```
+
+Bu araç şunları yapabilir:
+- **Dosya Tarama**: Incremental/full scan, kullanıcı bazlı tarama
+- **Veritabanı Optimizasyonu**: İndeks ekleme, BigInt dönüşümü, VACUUM
+- **Önbellek Yönetimi**: Redis istatistikleri, cache temizleme
+- **Dosya Yönetimi**: Çöp kutusu temizleme, versiyon temizleme
+- **Performans Raporu**: Sistem durumu, disk kullanımı
+
+### 60TB Veri Taşıma
+
+Mevcut veriyi TrueNAS'a taşımak için:
+
+```bash
+# Doğrudan NFS üzerinden rsync
+rsync -avP --progress /kaynak/dizin/ /mnt/nextcloud/data/USERNAME/files/
+
+# İzinleri düzelt (www-data UID:82 Alpine için)
+chown -R 82:82 /mnt/nextcloud/data/
+
+# Nextcloud veritabanını güncelle
+docker exec -u www-data nextcloud php occ files:scan --all
 ```
 
 ### 3. İlk Erişim

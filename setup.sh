@@ -30,8 +30,7 @@ print_banner() {
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║                                                               ║"
-    echo "║     🗄️  Nextcloud + TrueNAS Kurulum Sihirbazı               ║"
-    echo "║        60TB Self-Hosted Bulut Depolama Çözümü                ║"
+    echo "║            Nextcloud + TrueNAS Kurulum Sihirbazı              ║"
     echo "║                                                               ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -262,15 +261,50 @@ collect_proxy_config() {
 collect_storage_config() {
     print_section "💾 Depolama Yapılandırması"
     
-    # NFS Export paths
-    print_info "TrueNAS NFS export yollarını girin:"
-    ask_input "Nextcloud data export yolu" "/mnt/storage/nextcloud/data" NFS_DATA_EXPORT
+    # TrueNAS base path
+    print_info "TrueNAS'ta oluşturduğunuz NFS dizin yapısı:"
+    echo "  nextcloud/config   - Nextcloud yapılandırması"
+    echo "  nextcloud/data     - Kullanıcı verileri"
+    echo "  nextcloud/database - PostgreSQL veritabanı"
+    echo ""
+    
+    ask_input "TrueNAS NFS base path" "/mnt/storage/nextcloud" NFS_BASE_EXPORT
+    
+    # NFS Export paths (derived from base)
+    NFS_CONFIG_EXPORT="${NFS_BASE_EXPORT}/config"
+    NFS_DATA_EXPORT="${NFS_BASE_EXPORT}/data"
+    NFS_DATABASE_EXPORT="${NFS_BASE_EXPORT}/database"
+    
+    print_info "NFS export yolları:"
+    echo "  Config   : $NFS_CONFIG_EXPORT"
+    echo "  Data     : $NFS_DATA_EXPORT"
+    echo "  Database : $NFS_DATABASE_EXPORT"
+    echo ""
     
     # Mount points
-    ask_input "Yerel data mount noktası" "/mnt/nextcloud-data" NFS_DATA_MOUNT
+    ask_input "Yerel mount base dizini" "/mnt/nextcloud" NFS_BASE_MOUNT
+    
+    NFS_CONFIG_MOUNT="${NFS_BASE_MOUNT}/config"
+    NFS_DATA_MOUNT="${NFS_BASE_MOUNT}/data"
+    NFS_DATABASE_MOUNT="${NFS_BASE_MOUNT}/database"
     
     # Project directory
     ask_input "Nextcloud proje dizini" "/opt/nextcloud" PROJECT_DIR
+    
+    # Large dataset options
+    echo ""
+    print_info "Büyük veri seti ayarları:"
+    ask_input "Tahmini toplam veri boyutu (örn: 60TB)" "60TB" ESTIMATED_DATA_SIZE
+    
+    if ask_yes_no "60TB+ veri için optimize edilsin mi? (indeksleme, önbellek)" "y"; then
+        LARGE_DATASET="true"
+        ask_input "Paralel indeksleme işçi sayısı" "4" INDEX_WORKERS
+        ask_input "Dosya tarama batch boyutu" "1000" SCAN_BATCH_SIZE
+    else
+        LARGE_DATASET="false"
+        INDEX_WORKERS="2"
+        SCAN_BATCH_SIZE="500"
+    fi
     
     print_success "Depolama yapılandırması tamamlandı"
 }
@@ -493,10 +527,19 @@ show_config_summary() {
     esac
     echo ""
     
-    echo -e "${BOLD}Depolama:${NC}"
-    echo "  NFS Data Export     : $NFS_DATA_EXPORT"
-    echo "  Data Mount Noktası  : $NFS_DATA_MOUNT"
+    echo -e "${BOLD}Depolama (TrueNAS NFS):${NC}"
+    echo "  Base Export         : $NFS_BASE_EXPORT"
+    echo "  Config Export       : $NFS_CONFIG_EXPORT"
+    echo "  Data Export         : $NFS_DATA_EXPORT"
+    echo "  Database Export     : $NFS_DATABASE_EXPORT"
+    echo "  Mount Base          : $NFS_BASE_MOUNT"
     echo "  Proje Dizini        : $PROJECT_DIR"
+    echo ""
+    
+    echo -e "${BOLD}Büyük Veri Seti:${NC}"
+    echo "  Tahmini Boyut       : $ESTIMATED_DATA_SIZE"
+    echo "  Optimizasyon        : ${LARGE_DATASET:-false}"
+    echo "  İndeks Workers      : ${INDEX_WORKERS:-2}"
     echo ""
     
     echo -e "${BOLD}Nextcloud:${NC}"
@@ -558,9 +601,21 @@ NPM_HTTPS_PORT="${NPM_HTTPS_PORT:-443}"
 PROXY_TRUSTED_NETWORK="${PROXY_TRUSTED_NETWORK:-172.20.0.0/16}"
 
 # ==== Depolama ====
-NFS_DATA_EXPORT="$NFS_DATA_EXPORT"
-NFS_DATA_MOUNT="$NFS_DATA_MOUNT"
+NFS_BASE_EXPORT="${NFS_BASE_EXPORT:-/mnt/storage/nextcloud}"
+NFS_CONFIG_EXPORT="${NFS_CONFIG_EXPORT:-$NFS_BASE_EXPORT/config}"
+NFS_DATA_EXPORT="${NFS_DATA_EXPORT:-$NFS_BASE_EXPORT/data}"
+NFS_DATABASE_EXPORT="${NFS_DATABASE_EXPORT:-$NFS_BASE_EXPORT/database}"
+NFS_BASE_MOUNT="${NFS_BASE_MOUNT:-/mnt/nextcloud}"
+NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-$NFS_BASE_MOUNT/config}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-$NFS_BASE_MOUNT/data}"
+NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-$NFS_BASE_MOUNT/database}"
 PROJECT_DIR="$PROJECT_DIR"
+
+# ==== Büyük Veri Seti ====
+ESTIMATED_DATA_SIZE="${ESTIMATED_DATA_SIZE:-60TB}"
+LARGE_DATASET="${LARGE_DATASET:-true}"
+INDEX_WORKERS="${INDEX_WORKERS:-4}"
+SCAN_BATCH_SIZE="${SCAN_BATCH_SIZE:-1000}"
 
 # ==== Nextcloud ====
 NEXTCLOUD_ADMIN_USER="$NEXTCLOUD_ADMIN_USER"
@@ -660,6 +715,19 @@ PHP_UPLOAD_LIMIT=$PHP_UPLOAD_LIMIT
 # --------------------------------------------------
 
 TRUENAS_IP=$TRUENAS_IP
+
+# NFS Mount Points (3 ayrı mount)
+NFS_CONFIG_MOUNT=$NFS_CONFIG_MOUNT
+NFS_DATA_MOUNT=$NFS_DATA_MOUNT
+NFS_DATABASE_MOUNT=$NFS_DATABASE_MOUNT
+
+# --------------------------------------------------
+# LARGE DATASET SETTINGS (60TB+)
+# --------------------------------------------------
+
+LARGE_DATASET=${LARGE_DATASET:-false}
+INDEX_WORKERS=${INDEX_WORKERS:-4}
+SCAN_BATCH_SIZE=${SCAN_BATCH_SIZE:-1000}
 
 # --------------------------------------------------
 # DOMAIN / SSL SETTINGS

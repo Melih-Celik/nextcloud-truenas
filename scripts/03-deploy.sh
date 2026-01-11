@@ -168,19 +168,43 @@ echo -e "${GREEN}Environment configured${NC}"
 # ==================================================
 # Set Permissions
 # ==================================================
-echo -e "\n${YELLOW}[4/6] Checking NFS mount...${NC}"
+echo -e "\n${YELLOW}[4/6] Checking NFS mounts...${NC}"
 
-# Test if we can write to NFS mount at all
-if touch "$NFS_DATA_MOUNT/.write_test" 2>/dev/null; then
-    rm -f "$NFS_DATA_MOUNT/.write_test"
-    echo -e "${GREEN}NFS data mount is writable${NC}"
-else
-    echo -e "${RED}Cannot write to NFS mount at all!${NC}"
-    echo "Check TrueNAS NFS share permissions."
-    exit 1
-fi
+# Check all three NFS mounts
+check_nfs_mount() {
+    local mount_point="$1"
+    local name="$2"
+    
+    if [ ! -d "$mount_point" ]; then
+        echo -e "${RED}$name mount point does not exist: $mount_point${NC}"
+        return 1
+    fi
+    
+    if ! mountpoint -q "$mount_point" 2>/dev/null; then
+        echo -e "${YELLOW}$name is not a mount point. Trying to mount...${NC}"
+        mount -a 2>/dev/null || true
+    fi
+    
+    if touch "$mount_point/.write_test" 2>/dev/null; then
+        rm -f "$mount_point/.write_test"
+        echo -e "${GREEN}  ✓ $name mount is writable${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}  ⚠ Cannot write to $name mount${NC}"
+        return 1
+    fi
+}
 
-echo -e "${GREEN}NFS mount check passed${NC}"
+NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-/mnt/nextcloud/config}"
+NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-/mnt/nextcloud/data}"
+NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-/mnt/nextcloud/database}"
+
+echo "Checking NFS mounts..."
+check_nfs_mount "$NFS_CONFIG_MOUNT" "Config"
+check_nfs_mount "$NFS_DATA_MOUNT" "Data"
+check_nfs_mount "$NFS_DATABASE_MOUNT" "Database"
+
+echo -e "${GREEN}NFS mount check completed${NC}"
 
 # ==================================================
 # Pull Docker Images
@@ -234,16 +258,44 @@ done
 echo -e "\n${YELLOW}Running post-deployment configuration...${NC}"
 
 # Wait a bit more for Nextcloud to fully initialize
-sleep 5
+sleep 10
 
-# Set cron mode (run as the nextcloud user inside container)
-docker exec nextcloud php occ background:cron 2>/dev/null || true
+# Note: www-data user in Alpine container has UID 82
+# All occ commands must run as www-data user
+
+# Set cron mode
+echo "Setting background jobs to cron..."
+docker exec -u www-data nextcloud php occ background:cron 2>/dev/null || true
 
 # Add missing indices
-docker exec nextcloud php occ db:add-missing-indices 2>/dev/null || true
+echo "Adding missing database indices..."
+docker exec -u www-data nextcloud php occ db:add-missing-indices 2>/dev/null || true
 
 # Convert filecache bigint
-docker exec nextcloud php occ db:convert-filecache-bigint --no-interaction 2>/dev/null || true
+echo "Converting filecache to bigint..."
+docker exec -u www-data nextcloud php occ db:convert-filecache-bigint --no-interaction 2>/dev/null || true
+
+# Add trusted domains from configuration
+echo "Configuring trusted domains..."
+if [ -n "$TRUSTED_DOMAINS" ]; then
+    # Parse comma-separated trusted domains
+    IFS=',' read -ra DOMAINS <<< "$TRUSTED_DOMAINS"
+    INDEX=0
+    for DOMAIN in "${DOMAINS[@]}"; do
+        DOMAIN=$(echo "$DOMAIN" | xargs)  # Trim whitespace
+        docker exec -u www-data nextcloud php occ config:system:set trusted_domains $INDEX --value="$DOMAIN" 2>/dev/null || true
+        echo "  Added trusted domain [$INDEX]: $DOMAIN"
+        INDEX=$((INDEX + 1))
+    done
+fi
+
+# Also add the server's IP if not already in trusted domains
+SERVER_IP=$(hostname -I | awk '{print $1}')
+if [ -n "$SERVER_IP" ] && [[ ! "$TRUSTED_DOMAINS" == *"$SERVER_IP"* ]]; then
+    NEXT_INDEX=$(docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | wc -l)
+    docker exec -u www-data nextcloud php occ config:system:set trusted_domains $NEXT_INDEX --value="$SERVER_IP" 2>/dev/null || true
+    echo "  Added server IP to trusted domains: $SERVER_IP"
+fi
 
 # ==================================================
 # Summary

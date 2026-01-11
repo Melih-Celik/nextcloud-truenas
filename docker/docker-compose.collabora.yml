@@ -70,6 +70,9 @@ services:
       - nextcloud-network
     cap_add:
       - MKNOD
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9980/hosting/discovery"]
       interval: 30s

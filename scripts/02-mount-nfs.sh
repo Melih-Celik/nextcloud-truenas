@@ -50,38 +50,33 @@ TRUENAS_IP="${TRUENAS_IP:-192.168.1.20}"
 NFS_BASE_EXPORT="${NFS_BASE_EXPORT:-/mnt/storage/nextcloud}"
 NFS_BASE_MOUNT="${NFS_BASE_MOUNT:-/mnt/nextcloud}"
 
-# Individual exports
+# Individual exports (only config and data - database is local)
 NFS_CONFIG_EXPORT="${NFS_CONFIG_EXPORT:-$NFS_BASE_EXPORT/config}"
 NFS_DATA_EXPORT="${NFS_DATA_EXPORT:-$NFS_BASE_EXPORT/data}"
-NFS_DATABASE_EXPORT="${NFS_DATABASE_EXPORT:-$NFS_BASE_EXPORT/database}"
 
 # Individual mount points
 NFS_CONFIG_MOUNT="${NFS_CONFIG_MOUNT:-$NFS_BASE_MOUNT/config}"
 NFS_DATA_MOUNT="${NFS_DATA_MOUNT:-$NFS_BASE_MOUNT/data}"
-NFS_DATABASE_MOUNT="${NFS_DATABASE_MOUNT:-$NFS_BASE_MOUNT/database}"
 
 # Show current configuration
 echo ""
-echo -e "${YELLOW}Yapılandırma:${NC}"
+echo -e "${YELLOW}Yapilandirma:${NC}"
 echo "  TrueNAS IP     : $TRUENAS_IP"
 echo ""
 echo "  NFS Exports:"
 echo "    Config       : $NFS_CONFIG_EXPORT"
 echo "    Data         : $NFS_DATA_EXPORT"
-echo "    Database     : $NFS_DATABASE_EXPORT"
 echo ""
-echo "  Mount Noktaları:"
+echo "  Mount Noktalari:"
 echo "    Config       : $NFS_CONFIG_MOUNT"
 echo "    Data         : $NFS_DATA_MOUNT"
-echo "    Database     : $NFS_DATABASE_MOUNT"
+echo ""
+echo -e "${BLUE}Not: PostgreSQL veritabani performans icin yerel diskte tutulur.${NC}"
 echo ""
 
 # NFS Mount Options (optimized for 60TB+ data)
 # Hard mount ensures data integrity
 NFS_OPTS="rw,hard,intr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev,nofail"
-
-# Database mount - extra options for consistency
-NFS_DB_OPTS="rw,hard,intr,rsize=131072,wsize=131072,timeo=300,retrans=3,_netdev,nofail,sync"
 
 # ==================================================
 # 1. Check NFS Client
@@ -155,7 +150,6 @@ echo -e "\n${YELLOW}[5/6] Creating mount points...${NC}"
 
 mkdir -p "$NFS_CONFIG_MOUNT"
 mkdir -p "$NFS_DATA_MOUNT"
-mkdir -p "$NFS_DATABASE_MOUNT"
 
 echo -e "${GREEN}Mount points created${NC}"
 
@@ -213,10 +207,9 @@ mount_nfs() {
     fi
 }
 
-# Mount all three shares
+# Mount config and data shares (database is local)
 mount_nfs "$NFS_CONFIG_EXPORT" "$NFS_CONFIG_MOUNT" "$NFS_OPTS" "Config"
 mount_nfs "$NFS_DATA_EXPORT" "$NFS_DATA_MOUNT" "$NFS_OPTS" "Data"
-mount_nfs "$NFS_DATABASE_EXPORT" "$NFS_DATABASE_MOUNT" "$NFS_DB_OPTS" "Database"
 
 # Mount all from fstab
 echo ""
@@ -243,7 +236,6 @@ verify_mount() {
 echo ""
 verify_mount "$NFS_CONFIG_MOUNT" "Config"
 verify_mount "$NFS_DATA_MOUNT" "Data"
-verify_mount "$NFS_DATABASE_MOUNT" "Database"
 
 # Show disk space
 echo -e "\n${YELLOW}Disk Space:${NC}"
@@ -261,7 +253,6 @@ WWW_DATA_GID=82
 # Set ownership
 chown -R $WWW_DATA_UID:$WWW_DATA_GID "$NFS_CONFIG_MOUNT" 2>/dev/null || echo "  Note: chown on NFS may need TrueNAS ACL configuration"
 chown -R $WWW_DATA_UID:$WWW_DATA_GID "$NFS_DATA_MOUNT" 2>/dev/null || true
-chown -R $WWW_DATA_UID:$WWW_DATA_GID "$NFS_DATABASE_MOUNT" 2>/dev/null || true
 
 echo -e "${GREEN}Permissions set${NC}"
 
@@ -275,12 +266,13 @@ echo ""
 echo "Mount points configured:"
 echo "  Config   : $NFS_CONFIG_MOUNT"
 echo "  Data     : $NFS_DATA_MOUNT"
-echo "  Database : $NFS_DATABASE_MOUNT"
+echo ""
+echo -e "${BLUE}Note: PostgreSQL database is stored locally for performance.${NC}"
 echo ""
 echo "fstab entries added. Mounts will persist after reboot."
 echo ""
-echo -e "${YELLOW}TrueNAS'ta yetkilendirme ayarları:${NC}"
-echo "  1. Her dataset için maproot=root veya mapall=nobody:nogroup"
+echo -e "${YELLOW}TrueNAS yetkilendirme ayarlari:${NC}"
+echo "  1. Her dataset icin maproot=root veya mapall=nobody:nogroup"
 echo "  2. Veya ACL ile www-data (UID:82) izni verin"
 echo ""
 echo "Next step: Deploy Nextcloud with ./03-deploy.sh"

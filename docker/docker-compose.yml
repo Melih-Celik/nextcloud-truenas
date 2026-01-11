@@ -82,8 +82,11 @@ services:
       retries: 3
 
   # ===========================================
-  # POSTGRESQL DATABASE (NFS from TrueNAS)
+  # POSTGRESQL DATABASE (Local storage for performance)
   # ===========================================
+  # NOTE: Database is stored locally for better performance.
+  # NFS is not suitable for database workloads.
+  # Use backup script to protect database.
   postgres:
     image: postgres:${POSTGRES_TAG:-16-alpine}
     container_name: postgres
@@ -94,8 +97,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      # Database storage (NFS from TrueNAS)
-      - ${NFS_DATABASE_MOUNT:-/mnt/nextcloud/database}:/var/lib/postgresql/data
+      # Database storage (local for performance)
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - nextcloud-network
     healthcheck:
@@ -184,4 +187,6 @@ networks:
 # ===========================================
 volumes:
   nextcloud-app:
+    driver: local
+  postgres-data:
     driver: local

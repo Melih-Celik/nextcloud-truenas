@@ -227,9 +227,6 @@ net.ipv4.tcp_wmem = 4096 65536 16777216
 net.core.netdev_max_backlog = 5000
 net.core.somaxconn = 65535
 
-# NFS tuning
-sunrpc.tcp_slot_table_entries = 128
-
 # File system tuning
 fs.file-max = 2097152
 fs.inotify.max_user_watches = 524288
@@ -240,8 +237,19 @@ vm.dirty_ratio = 60
 vm.dirty_background_ratio = 2
 EOF
 
-# Apply sysctl settings
-sysctl -p /etc/sysctl.d/99-nextcloud.conf
+# Apply sysctl settings (ignore errors for unavailable parameters)
+sysctl -p /etc/sysctl.d/99-nextcloud.conf 2>/dev/null || true
+
+# NFS tuning (sunrpc module may not be loaded yet)
+# This will be applied when NFS is first used
+cat > /etc/sysctl.d/99-nfs-tuning.conf << 'EOF'
+# NFS tuning - applied when sunrpc module is loaded
+sunrpc.tcp_slot_table_entries = 128
+EOF
+
+# Try to load sunrpc module and apply NFS tuning
+modprobe sunrpc 2>/dev/null || true
+sysctl -p /etc/sysctl.d/99-nfs-tuning.conf 2>/dev/null || echo "  sunrpc tuning will be applied after first NFS mount"
 
 # Increase open file limits
 cat > /etc/security/limits.d/99-nextcloud.conf << 'EOF'

@@ -1,0 +1,15 @@
+; ===========================================
+; Redis Session Handler Configuration
+; ===========================================
+; This file is auto-generated during deployment.
+; Do not edit manually - changes will be overwritten.
+;
+; Redis session handler ensures PHP sessions are stored
+; in Redis for better performance and scalability.
+; ===========================================
+
+session.save_handler = redis
+session.save_path = "tcp://${REDIS_HOST}:${REDIS_PORT}?auth=${REDIS_PASSWORD}"
+redis.session.locking_enabled = 1
+redis.session.lock_retries = -1
+redis.session.lock_wait_time = 10000

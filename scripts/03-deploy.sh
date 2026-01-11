@@ -166,6 +166,19 @@ if grep -q "CHANGE_ME" "$PROJECT_DIR/.env"; then
     echo -e "${GREEN}  Passwords updated${NC}"
 fi
 
+# Generate Redis session config from template (after .env is ready)
+if [ -f "$PROJECT_DIR/configs/php/redis-session.ini.template" ]; then
+    # Source .env to get REDIS_PASSWORD
+    source "$PROJECT_DIR/.env"
+    
+    # Generate redis-session.ini with actual values
+    sed -e "s|\${REDIS_HOST}|redis|g" \
+        -e "s|\${REDIS_PORT}|6379|g" \
+        -e "s|\${REDIS_PASSWORD}|${REDIS_PASSWORD:-}|g" \
+        "$PROJECT_DIR/configs/php/redis-session.ini.template" > "$PROJECT_DIR/configs/php/redis-session.ini"
+    echo "  Generated redis-session.ini with Redis password"
+fi
+
 echo -e "${GREEN}Environment configured${NC}"
 
 # ==================================================

@@ -72,8 +72,10 @@ services:
       # Custom PHP config
       - ./configs/php/custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
       
-      # Entrypoint hooks for automatic configuration
-      - ./configs/nextcloud/hooks/before-starting:/docker-entrypoint-hooks.d/before-starting:ro
+      # Redis session config (generated during deployment)
+      - ./configs/php/redis-session.ini:/usr/local/etc/php/conf.d/zzz-redis-session.ini:ro
+      
+      # Post-installation hook for cache configuration
       - ./configs/nextcloud/hooks/post-installation:/docker-entrypoint-hooks.d/post-installation:ro
     depends_on:
       postgres:

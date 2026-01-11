@@ -1,20 +1,20 @@
-# Nextcloud Sunucusu Kurulum Rehberi
+# Nextcloud Sunucusu Kurulum Rehberi (AlmaLinux 10)
 
 Bu döküman, Docker üzerinde Nextcloud kurulumunu ve TrueNAS NFS entegrasyonunu anlatmaktadır.
 
 ## 📋 Ön Gereksinimler
 
-- Ubuntu 24.04 LTS Server
+- AlmaLinux 10 Server
 - Minimum 8GB RAM, 4 CPU Core
 - 64GB+ SSD (OS ve Docker için)
 - TrueNAS NFS paylaşımları hazır
 - Domain adı ve SSL sertifikası (production için)
 
-## 1️⃣ Ubuntu Server Kurulumu
+## 1️⃣ AlmaLinux Server Kurulumu
 
 ### 1.1 Minimal Kurulum
 
-1. Ubuntu 24.04 LTS Server ISO'yu indirin
+1. AlmaLinux 10 ISO'yu indirin (https://almalinux.org/)
 2. Minimal installation seçin
 3. OpenSSH server'ı kurun
 4. Statik IP yapılandırın
@@ -23,20 +23,30 @@ Bu döküman, Docker üzerinde Nextcloud kurulumunu ve TrueNAS NFS entegrasyonun
 
 ```bash
 # Sistemi güncelle
-sudo apt update && sudo apt upgrade -y
+sudo dnf update -y
+
+# EPEL ve CRB repository ekle
+sudo dnf install -y epel-release
+sudo dnf config-manager --set-enabled crb
 
 # Gerekli paketleri kur
-sudo apt install -y \
+sudo dnf install -y \
     curl \
     wget \
     git \
     vim \
     htop \
-    nfs-common \
+    iotop \
+    nfs-utils \
     ca-certificates \
-    gnupg \
-    lsb-release \
-    ufw
+    gnupg2 \
+    tar \
+    bzip2 \
+    unzip \
+    policycoreutils-python-utils \
+    bash-completion \
+    net-tools \
+    bind-utils
 
 # Timezone ayarla
 sudo timedatectl set-timezone Europe/Istanbul
@@ -45,72 +55,109 @@ sudo timedatectl set-timezone Europe/Istanbul
 sudo hostnamectl set-hostname nextcloud-server
 ```
 
-### 1.3 Statik IP (Netplan)
+### 1.3 Statik IP (NetworkManager)
 
 ```bash
-sudo vim /etc/netplan/00-installer-config.yaml
+# Mevcut bağlantıları listele
+nmcli connection show
+
+# Statik IP ayarla (connection adınıza göre değiştirin)
+sudo nmcli connection modify "enp0s3" \
+    ipv4.addresses 192.168.1.10/24 \
+    ipv4.gateway 192.168.1.1 \
+    ipv4.dns "8.8.8.8,8.8.4.4" \
+    ipv4.method manual
+
+# Bağlantıyı yeniden başlat
+sudo nmcli connection down "enp0s3"
+sudo nmcli connection up "enp0s3"
+
+# Doğrula
+ip addr show
+nmcli connection show "enp0s3"
 ```
 
-```yaml
-network:
-  version: 2
-  ethernets:
-    enp0s3:  # Interface adınıza göre değiştirin
-      dhcp4: false
-      addresses:
-        - 192.168.1.10/24
-      routes:
-        - to: default
-          via: 192.168.1.1
-      nameservers:
-        addresses:
-          - 8.8.8.8
-          - 8.8.4.4
-```
+### 1.4 SELinux Yapılandırması
 
 ```bash
-sudo netplan apply
+# SELinux durumunu kontrol et
+getenforce
+sestatus
+
+# NFS ve container için SELinux boolean'ları ayarla
+sudo setsebool -P httpd_use_nfs 1
+sudo setsebool -P httpd_can_network_connect 1
+sudo setsebool -P container_use_nfs 1
+sudo setsebool -P container_manage_cgroup 1
+
+# Boolean'ları doğrula
+getsebool httpd_use_nfs httpd_can_network_connect container_use_nfs
 ```
+
+> **Not:** SELinux'u kapatmak yerine doğru şekilde yapılandırmak güvenlik açısından önerilir. Sorun yaşarsanız audit loglarını kontrol edin: `sudo ausearch -m avc -ts recent`
 
 ## 2️⃣ Docker Kurulumu
 
 ### 2.1 Docker Engine
 
 ```bash
-# Docker GPG key ekle
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
+# Eski versiyonları kaldır (varsa)
+sudo dnf remove -y docker \
+    docker-client \
+    docker-client-latest \
+    docker-common \
+    docker-latest \
+    docker-latest-logrotate \
+    docker-logrotate \
+    docker-engine \
+    podman \
+    runc
 
-# Repository ekle
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+# Docker repository ekle
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
 # Docker kur
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Docker'ı başlat ve etkinleştir
+sudo systemctl enable --now docker
 
 # Kullanıcıyı docker grubuna ekle
 sudo usermod -aG docker $USER
-newgrp docker
 
-# Docker'ı başlat
-sudo systemctl enable docker
-sudo systemctl start docker
+# Grubu aktifleştir (veya logout/login yapın)
+newgrp docker
 ```
 
 ### 2.2 Doğrulama
 
 ```bash
+# Versiyon kontrolü
 docker --version
 docker compose version
+
+# Servis durumu
+sudo systemctl status docker
+
+# Test container
+docker run hello-world
 ```
 
 ## 3️⃣ NFS Mount Yapılandırması
 
-### 3.1 Mount Noktaları Oluştur
+### 3.1 NFS Paketleri ve Servisleri
+
+```bash
+# NFS utilities zaten kurulu olmalı, servisleri başlat
+sudo systemctl enable --now nfs-client.target
+sudo systemctl enable --now rpcbind
+
+# Servis durumlarını kontrol et
+systemctl status nfs-client.target
+systemctl status rpcbind
+```
+
+### 3.2 Mount Noktaları Oluştur
 
 ```bash
 # Mount dizinlerini oluştur
@@ -118,7 +165,7 @@ sudo mkdir -p /mnt/nextcloud-data
 sudo mkdir -p /mnt/nextcloud-config
 ```
 
-### 3.2 NFS Mount Test
+### 3.3 NFS Mount Test
 
 ```bash
 # TrueNAS'tan export listesini kontrol et
@@ -140,7 +187,7 @@ sudo umount /mnt/nextcloud-data
 sudo umount /mnt/nextcloud-config
 ```
 
-### 3.3 Kalıcı Mount (fstab)
+### 3.4 Kalıcı Mount (fstab)
 
 ```bash
 sudo vim /etc/fstab
@@ -154,14 +201,15 @@ Ekleyin:
 ```
 
 ```bash
-# Mount et
+# Syntax kontrolü
 sudo mount -a
 
 # Doğrula
 df -h | grep nextcloud
+mount | grep nfs
 ```
 
-### 3.4 NFS Mount Seçenekleri Açıklaması
+### 3.5 NFS Mount Seçenekleri Açıklaması
 
 | Seçenek | Açıklama |
 |---------|----------|
@@ -174,7 +222,33 @@ df -h | grep nextcloud
 | `retrans=2` | 2 retry |
 | `_netdev` | Network hazır olana kadar bekle |
 
-## 4️⃣ Proje Dizini Hazırlığı
+## 4️⃣ Firewall Yapılandırması
+
+### 4.1 Firewalld Kuralları
+
+```bash
+# Firewalld durumunu kontrol et ve başlat
+sudo systemctl enable --now firewalld
+sudo systemctl status firewalld
+
+# HTTP ve HTTPS izni
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+
+# NFS client (giden bağlantılar için genelde gerekli değil, ama emin olmak için)
+sudo firewall-cmd --permanent --add-service=nfs
+sudo firewall-cmd --permanent --add-service=nfs3
+sudo firewall-cmd --permanent --add-service=rpc-bind
+sudo firewall-cmd --permanent --add-service=mountd
+
+# Kuralları yeniden yükle
+sudo firewall-cmd --reload
+
+# Durumu kontrol et
+sudo firewall-cmd --list-all
+```
+
+## 5️⃣ Proje Dizini Hazırlığı
 
 ```bash
 # Proje dizini
@@ -182,19 +256,20 @@ sudo mkdir -p /opt/nextcloud
 cd /opt/nextcloud
 
 # Gerekli dizinleri oluştur
-mkdir -p configs/nginx
-mkdir -p configs/php
-mkdir -p configs/redis
-mkdir -p db-data
-mkdir -p redis-data
+sudo mkdir -p configs/nginx
+sudo mkdir -p configs/php
+sudo mkdir -p configs/redis
+sudo mkdir -p db-data
+sudo mkdir -p redis-data
+sudo mkdir -p ssl
 
 # İzinleri ayarla
 sudo chown -R $USER:$USER /opt/nextcloud
 ```
 
-## 5️⃣ Docker Compose ile Deployment
+## 6️⃣ Docker Compose ile Deployment
 
-### 5.1 Dosyaları Kopyala
+### 6.1 Dosyaları Kopyala
 
 Repository'den dosyaları `/opt/nextcloud` dizinine kopyalayın:
 
@@ -205,7 +280,7 @@ cp docker/.env.example /opt/nextcloud/.env
 cp -r docker/configs/* /opt/nextcloud/configs/
 ```
 
-### 5.2 Environment Dosyasını Düzenle
+### 6.2 Environment Dosyasını Düzenle
 
 ```bash
 vim /opt/nextcloud/.env
@@ -217,14 +292,14 @@ Zorunlu değişiklikleri yapın:
 - `REDIS_PASSWORD`
 - `NEXTCLOUD_TRUSTED_DOMAINS`
 
-### 5.3 Başlat
+### 6.3 Başlat
 
 ```bash
 cd /opt/nextcloud
 docker compose up -d
 ```
 
-### 5.4 Logları İzle
+### 6.4 Logları İzle
 
 ```bash
 # Tüm loglar
@@ -234,24 +309,26 @@ docker compose logs -f
 docker compose logs -f nextcloud
 ```
 
-## 6️⃣ SSL/TLS Yapılandırması
+## 7️⃣ SSL/TLS Yapılandırması
 
-### 6.1 Let's Encrypt (Certbot)
+### 7.1 Let's Encrypt (Certbot)
 
 ```bash
 # Certbot kur
-sudo apt install -y certbot
+sudo dnf install -y certbot
+
+# Nginx container'ı geçici olarak durdur
+cd /opt/nextcloud
+docker compose stop nginx
 
 # Sertifika al (standalone)
 sudo certbot certonly --standalone -d cloud.yourdomain.com
 
-# Veya webroot ile (nginx çalışırken)
-sudo certbot certonly --webroot -w /opt/nextcloud/configs/nginx/webroot -d cloud.yourdomain.com
+# Nginx'i yeniden başlat
+docker compose start nginx
 ```
 
-### 6.2 Nginx SSL Yapılandırması
-
-Sertifikaları Nginx'e bağla:
+### 7.2 Sertifikaları Kopyala
 
 ```bash
 # Sertifika dizini oluştur
@@ -261,9 +338,13 @@ mkdir -p /opt/nextcloud/ssl
 sudo cp /etc/letsencrypt/live/cloud.yourdomain.com/fullchain.pem /opt/nextcloud/ssl/
 sudo cp /etc/letsencrypt/live/cloud.yourdomain.com/privkey.pem /opt/nextcloud/ssl/
 sudo chmod 644 /opt/nextcloud/ssl/*.pem
+sudo chown $USER:$USER /opt/nextcloud/ssl/*.pem
+
+# Nginx'i yeniden başlat
+docker compose restart nginx
 ```
 
-### 6.3 Otomatik Yenileme
+### 7.3 Otomatik Yenileme
 
 ```bash
 # Crontab
@@ -272,17 +353,17 @@ sudo crontab -e
 
 Ekleyin:
 ```cron
-0 3 1 * * certbot renew --quiet && cp /etc/letsencrypt/live/cloud.yourdomain.com/*.pem /opt/nextcloud/ssl/ && docker compose -f /opt/nextcloud/docker-compose.yml restart nginx
+0 3 1 * * certbot renew --quiet --pre-hook "docker compose -f /opt/nextcloud/docker-compose.yml stop nginx" --post-hook "cp /etc/letsencrypt/live/cloud.yourdomain.com/*.pem /opt/nextcloud/ssl/ && docker compose -f /opt/nextcloud/docker-compose.yml start nginx"
 ```
 
-## 7️⃣ İlk Erişim ve Yapılandırma
+## 8️⃣ İlk Erişim ve Yapılandırma
 
-### 7.1 Web Arayüzü
+### 8.1 Web Arayüzü
 
 1. Tarayıcıda açın: `https://cloud.yourdomain.com`
-2. Admin bilgileriyle giriş yapın
+2. Admin bilgileriyle giriş yapın (.env dosyasındaki)
 
-### 7.2 Temel Ayarlar
+### 8.2 Temel Ayarlar
 
 Admin olarak giriş yaptıktan sonra:
 
@@ -296,7 +377,7 @@ Admin olarak giriş yaptıktan sonra:
 3. **Settings → Administration → Sharing**
    - Default ayarları gözden geçirin
 
-### 7.3 Önerilen Uygulamalar
+### 8.3 Önerilen Uygulamalar
 
 Apps menüsünden yükleyin:
 - **Files automated tagging** - Otomatik etiketleme
@@ -304,9 +385,9 @@ Apps menüsünden yükleyin:
 - **Preview Generator** - Önizleme oluşturucu
 - **External storage support** - Harici depolama
 
-## 8️⃣ Cron Job Yapılandırması
+## 9️⃣ Cron Job Yapılandırması
 
-### 8.1 Host Cron
+### 9.1 Host Cron
 
 ```bash
 sudo crontab -e
@@ -324,15 +405,15 @@ Ekleyin:
 0 3 * * 0 docker exec -u www-data nextcloud php occ files:scan --all
 ```
 
-### 8.2 Cron Modunu Aktifleştir
+### 9.2 Cron Modunu Aktifleştir
 
 ```bash
 docker exec -u www-data nextcloud php occ background:cron
 ```
 
-## 9️⃣ Doğrulama ve Test
+## 🔟 Doğrulama ve Test
 
-### 9.1 Sistem Durumu
+### 10.1 Sistem Durumu
 
 ```bash
 # Container durumu
@@ -342,10 +423,10 @@ docker compose ps
 docker exec -u www-data nextcloud php occ status
 
 # Güvenlik taraması
-docker exec -u www-data nextcloud php occ security:scan
+docker exec -u www-data nextcloud php occ security:certificates
 ```
 
-### 9.2 NFS Bağlantı Testi
+### 10.2 NFS Bağlantı Testi
 
 ```bash
 # Dosya yükleme testi
@@ -354,7 +435,7 @@ docker exec -u www-data nextcloud php occ security:scan
 ls -la /mnt/nextcloud-data/admin/files/
 ```
 
-### 9.3 Performans Testi
+### 10.3 Performans Testi
 
 ```bash
 # Basit yazma testi
@@ -364,9 +445,11 @@ rm /mnt/nextcloud-data/testfile
 
 ## ✅ Checklist
 
-- [ ] Ubuntu Server kuruldu
+- [ ] AlmaLinux 10 Server kuruldu
 - [ ] Docker ve Docker Compose kuruldu
+- [ ] SELinux boolean'ları ayarlandı
 - [ ] NFS mount'lar yapılandırıldı
+- [ ] Firewalld kuralları eklendi
 - [ ] Docker Compose ile servisler başlatıldı
 - [ ] SSL sertifikası alındı
 - [ ] Nextcloud web arayüzüne erişildi

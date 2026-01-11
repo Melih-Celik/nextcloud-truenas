@@ -2,7 +2,7 @@
 # ==================================================
 # Host Preparation Script for Nextcloud Server
 # ==================================================
-# This script prepares Ubuntu 24.04 for Nextcloud deployment
+# This script prepares AlmaLinux 10 for Nextcloud deployment
 # Run as: sudo ./01-prepare-host.sh
 # ==================================================
 
@@ -16,6 +16,7 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Nextcloud Host Preparation Script    ${NC}"
+echo -e "${GREEN}  Platform: AlmaLinux 10               ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 # Check if running as root
@@ -27,55 +28,66 @@ fi
 # ==================================================
 # 1. System Update
 # ==================================================
-echo -e "\n${YELLOW}[1/8] Updating system packages...${NC}"
-apt update && apt upgrade -y
+echo -e "\n${YELLOW}[1/9] Updating system packages...${NC}"
+dnf update -y
 
 # ==================================================
-# 2. Install Required Packages
+# 2. Install EPEL and Required Packages
 # ==================================================
-echo -e "\n${YELLOW}[2/8] Installing required packages...${NC}"
-apt install -y \
+echo -e "\n${YELLOW}[2/9] Installing EPEL and required packages...${NC}"
+
+# Enable EPEL
+dnf install -y epel-release
+dnf config-manager --set-enabled crb 2>/dev/null || true
+
+# Install required packages
+dnf install -y \
     curl \
     wget \
     git \
     vim \
     htop \
     iotop \
-    nfs-common \
+    nfs-utils \
     ca-certificates \
-    gnupg \
-    lsb-release \
-    ufw \
+    gnupg2 \
+    tar \
+    bzip2 \
+    unzip \
+    policycoreutils-python-utils \
+    bash-completion \
+    net-tools \
+    bind-utils \
     fail2ban \
-    unattended-upgrades \
-    apt-listchanges
+    fail2ban-firewalld \
+    certbot \
+    cronie
 
 # ==================================================
 # 3. Install Docker
 # ==================================================
-echo -e "\n${YELLOW}[3/8] Installing Docker...${NC}"
+echo -e "\n${YELLOW}[3/9] Installing Docker...${NC}"
 
 # Remove old versions
-apt remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+dnf remove -y docker \
+    docker-client \
+    docker-client-latest \
+    docker-common \
+    docker-latest \
+    docker-latest-logrotate \
+    docker-logrotate \
+    docker-engine \
+    podman \
+    runc 2>/dev/null || true
 
-# Add Docker's official GPG key
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
-
-# Add repository
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
+# Add Docker repository
+dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
 # Install Docker
-apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Start and enable Docker
-systemctl enable docker
-systemctl start docker
+systemctl enable --now docker
 
 # Add current user to docker group
 if [ -n "$SUDO_USER" ]; then
@@ -86,14 +98,14 @@ fi
 # ==================================================
 # 4. Create Directory Structure
 # ==================================================
-echo -e "\n${YELLOW}[4/8] Creating directory structure...${NC}"
+echo -e "\n${YELLOW}[4/9] Creating directory structure...${NC}"
 
 # NFS mount points
 mkdir -p /mnt/nextcloud-data
 mkdir -p /mnt/nextcloud-config
 
 # Application directory
-mkdir -p /opt/nextcloud/{configs/nginx,configs/php,configs/redis,db-data,redis-data,ssl}
+mkdir -p /opt/nextcloud/{configs/nginx,configs/php,configs/redis,db-data,redis-data,ssl,backups}
 
 # Set ownership
 if [ -n "$SUDO_USER" ]; then
@@ -106,34 +118,47 @@ echo "  /mnt/nextcloud-config"
 echo "  /opt/nextcloud"
 
 # ==================================================
-# 5. Configure Firewall (UFW)
+# 5. Configure SELinux
 # ==================================================
-echo -e "\n${YELLOW}[5/8] Configuring firewall...${NC}"
+echo -e "\n${YELLOW}[5/9] Configuring SELinux...${NC}"
 
-# Reset UFW
-ufw --force reset
+# Set SELinux booleans for NFS and containers
+setsebool -P container_use_nfs 1
+setsebool -P httpd_use_nfs 1
+setsebool -P httpd_can_network_connect 1
+setsebool -P httpd_can_network_connect_db 1
+setsebool -P container_manage_cgroup 1
 
-# Default policies
-ufw default deny incoming
-ufw default allow outgoing
+echo -e "${GREEN}SELinux booleans configured${NC}"
+getsebool container_use_nfs httpd_use_nfs httpd_can_network_connect
 
-# Allow SSH
-ufw allow 22/tcp comment 'SSH'
+# ==================================================
+# 6. Configure Firewall (firewalld)
+# ==================================================
+echo -e "\n${YELLOW}[6/9] Configuring firewall...${NC}"
 
-# Allow HTTP/HTTPS
-ufw allow 80/tcp comment 'HTTP'
-ufw allow 443/tcp comment 'HTTPS'
+# Ensure firewalld is running
+systemctl enable --now firewalld
 
-# Enable UFW
-ufw --force enable
+# Add services
+firewall-cmd --permanent --add-service=http
+firewall-cmd --permanent --add-service=https
+firewall-cmd --permanent --add-service=ssh
+
+# Remove unnecessary services
+firewall-cmd --permanent --remove-service=cockpit 2>/dev/null || true
+firewall-cmd --permanent --remove-service=dhcpv6-client 2>/dev/null || true
+
+# Reload firewall
+firewall-cmd --reload
 
 echo -e "${GREEN}Firewall configured:${NC}"
-ufw status verbose
+firewall-cmd --list-all
 
 # ==================================================
-# 6. Configure Fail2ban
+# 7. Configure Fail2ban
 # ==================================================
-echo -e "\n${YELLOW}[6/8] Configuring Fail2ban...${NC}"
+echo -e "\n${YELLOW}[7/9] Configuring Fail2ban...${NC}"
 
 # Create Nextcloud filter
 cat > /etc/fail2ban/filter.d/nextcloud.conf << 'EOF'
@@ -145,29 +170,43 @@ datepattern = ,?\s*"time"\s*:\s*"%%Y-%%m-%%d[T ]%%H:%%M:%%S(%%z)?"
 EOF
 
 # Create Nextcloud jail
-cat > /etc/fail2ban/jail.d/nextcloud.conf << 'EOF'
+cat > /etc/fail2ban/jail.d/nextcloud.local << 'EOF'
 [nextcloud]
 backend = auto
 enabled = true
-port = 80,443
+port = http,https
 protocol = tcp
 filter = nextcloud
 maxretry = 5
-bantime = 3600
+bantime = 86400
 findtime = 600
 logpath = /mnt/nextcloud-data/nextcloud.log
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
+banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
 EOF
 
-# Restart Fail2ban
-systemctl enable fail2ban
-systemctl restart fail2ban
+# Create SSH jail
+cat > /etc/fail2ban/jail.d/sshd.local << 'EOF'
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+backend = systemd
+maxretry = 3
+bantime = 86400
+findtime = 600
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
+EOF
+
+# Start Fail2ban
+systemctl enable --now fail2ban
 
 echo -e "${GREEN}Fail2ban configured with Nextcloud filter${NC}"
 
 # ==================================================
-# 7. System Tuning
+# 8. System Tuning
 # ==================================================
-echo -e "\n${YELLOW}[7/8] Applying system tuning...${NC}"
+echo -e "\n${YELLOW}[8/9] Applying system tuning...${NC}"
 
 # Sysctl tuning
 cat > /etc/sysctl.d/99-nextcloud.conf << 'EOF'
@@ -177,6 +216,7 @@ net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 87380 16777216
 net.ipv4.tcp_wmem = 4096 65536 16777216
 net.core.netdev_max_backlog = 5000
+net.core.somaxconn = 65535
 
 # NFS tuning
 sunrpc.tcp_slot_table_entries = 128
@@ -205,37 +245,47 @@ EOF
 echo -e "${GREEN}System tuning applied${NC}"
 
 # ==================================================
-# 8. Enable Automatic Updates
+# 9. Enable NFS Client Services
 # ==================================================
-echo -e "\n${YELLOW}[8/8] Configuring automatic security updates...${NC}"
+echo -e "\n${YELLOW}[9/9] Enabling NFS client services...${NC}"
 
-# Configure unattended upgrades
-cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
-Unattended-Upgrade::Allowed-Origins {
-    "${distro_id}:${distro_codename}";
-    "${distro_id}:${distro_codename}-security";
-    "${distro_id}ESMApps:${distro_codename}-apps-security";
-    "${distro_id}ESM:${distro_codename}-infra-security";
-};
+systemctl enable --now nfs-client.target
+systemctl enable --now rpcbind
 
-Unattended-Upgrade::Package-Blacklist {
-    "docker-ce";
-    "docker-ce-cli";
-};
+echo -e "${GREEN}NFS client services enabled${NC}"
 
-Unattended-Upgrade::AutoFixInterruptedDpkg "true";
-Unattended-Upgrade::MinimalSteps "true";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
+# ==================================================
+# Configure DNF Automatic Updates (Security Only)
+# ==================================================
+echo -e "\n${YELLOW}Configuring automatic security updates...${NC}"
+
+dnf install -y dnf-automatic
+
+# Configure for security updates only
+cat > /etc/dnf/automatic.conf << 'EOF'
+[commands]
+upgrade_type = security
+random_sleep = 360
+download_updates = yes
+apply_updates = yes
+
+[emitters]
+emit_via = stdio
+
+[email]
+email_from = root@localhost
+email_to = root
+email_host = localhost
+
+[command]
+[command_email]
+[base]
+debuglevel = 1
 EOF
 
-cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
+systemctl enable --now dnf-automatic.timer
 
-echo -e "${GREEN}Automatic updates configured${NC}"
+echo -e "${GREEN}Automatic security updates configured${NC}"
 
 # ==================================================
 # Summary
@@ -243,6 +293,15 @@ echo -e "${GREEN}Automatic updates configured${NC}"
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}  Host Preparation Complete!           ${NC}"
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "Installed components:"
+echo "  ✓ Docker CE + Docker Compose"
+echo "  ✓ NFS client utilities"
+echo "  ✓ Fail2ban with Nextcloud filter"
+echo "  ✓ Firewalld (HTTP/HTTPS/SSH)"
+echo "  ✓ SELinux booleans configured"
+echo "  ✓ System performance tuning"
+echo "  ✓ Automatic security updates"
 echo ""
 echo "Next steps:"
 echo "  1. Configure NFS mounts: sudo ./02-mount-nfs.sh"

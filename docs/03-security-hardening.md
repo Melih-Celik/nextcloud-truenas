@@ -1,4 +1,4 @@
-# Güvenlik Sıkılaştırma Rehberi
+# Güvenlik Sıkılaştırma Rehberi (AlmaLinux 10)
 
 Bu döküman, Nextcloud + TrueNAS sisteminin güvenlik yapılandırmasını anlatmaktadır.
 
@@ -8,7 +8,7 @@ Bu döküman, Nextcloud + TrueNAS sisteminin güvenlik yapılandırmasını anla
 
 ```bash
 # Certbot kurulumu
-sudo apt install -y certbot
+sudo dnf install -y certbot
 
 # Nginx'i geçici olarak durdur
 cd /opt/nextcloud
@@ -43,7 +43,11 @@ EOF
 
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/nextcloud.sh
 
-# Test renewal
+# Certbot timer'ı kontrol et (AlmaLinux'ta systemd timer kullanır)
+sudo systemctl status certbot-renew.timer
+sudo systemctl enable --now certbot-renew.timer
+
+# Manuel test
 sudo certbot renew --dry-run
 ```
 
@@ -57,53 +61,89 @@ sudo certbot renew --dry-run
 openssl s_client -connect cloud.yourdomain.com:443 -tls1_3
 ```
 
-## 2️⃣ Firewall (UFW)
+## 2️⃣ Firewall (firewalld)
 
-### 2.1 Temel Kurallar
+### 2.1 Temel Yapılandırma
 
 ```bash
-# Mevcut kuralları görüntüle
-sudo ufw status verbose
+# Firewalld'ı başlat ve etkinleştir
+sudo systemctl enable --now firewalld
 
-# Sadece gerekli portları aç
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-
-# SSH (IP kısıtlamalı önerilir)
-sudo ufw allow from 192.168.1.0/24 to any port 22 proto tcp comment 'SSH from LAN'
-
-# HTTP/HTTPS
-sudo ufw allow 80/tcp comment 'HTTP'
-sudo ufw allow 443/tcp comment 'HTTPS'
-
-# Aktifleştir
-sudo ufw enable
+# Mevcut durumu görüntüle
+sudo firewall-cmd --state
+sudo firewall-cmd --list-all
 ```
 
-### 2.2 Rate Limiting
+### 2.2 Zone Yapılandırması
 
 ```bash
-# SSH brute force koruması
-sudo ufw limit ssh/tcp comment 'SSH rate limit'
+# Public zone için kurallar (varsayılan)
+# Sadece gerekli servisleri aç
+sudo firewall-cmd --permanent --zone=public --add-service=http
+sudo firewall-cmd --permanent --zone=public --add-service=https
+sudo firewall-cmd --permanent --zone=public --add-service=ssh
+
+# Gereksiz servisleri kaldır
+sudo firewall-cmd --permanent --zone=public --remove-service=cockpit 2>/dev/null || true
+sudo firewall-cmd --permanent --zone=public --remove-service=dhcpv6-client 2>/dev/null || true
+
+# Kuralları uygula
+sudo firewall-cmd --reload
+
+# Doğrula
+sudo firewall-cmd --list-all
 ```
 
-### 2.3 Logging
+### 2.3 SSH için IP Kısıtlaması (Önerilen)
 
 ```bash
-# Logging aktifleştir
-sudo ufw logging on
-sudo ufw logging medium
+# Sadece belirli IP'lerden SSH izni (rich rule)
+sudo firewall-cmd --permanent --zone=public --remove-service=ssh
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" service name="ssh" accept'
+
+# Veya trusted zone kullan
+sudo firewall-cmd --permanent --zone=trusted --add-source=192.168.1.0/24
+sudo firewall-cmd --permanent --zone=trusted --add-service=ssh
+
+sudo firewall-cmd --reload
+```
+
+### 2.4 Rate Limiting (DDoS Koruması)
+
+```bash
+# HTTP/HTTPS için rate limiting
+sudo firewall-cmd --permanent --add-rich-rule='rule service name="http" limit value="25/m" accept'
+sudo firewall-cmd --permanent --add-rich-rule='rule service name="https" limit value="25/m" accept'
+
+sudo firewall-cmd --reload
+```
+
+### 2.5 Logging
+
+```bash
+# Dropped paketleri logla
+sudo firewall-cmd --set-log-denied=all
 
 # Log dosyası
-tail -f /var/log/ufw.log
+sudo journalctl -f -t kernel | grep -i firewall
 ```
 
 ## 3️⃣ Fail2ban
 
-### 3.1 Nextcloud Jail
+### 3.1 Kurulum
 
 ```bash
-# /etc/fail2ban/filter.d/nextcloud.conf
+# Fail2ban kur
+sudo dnf install -y fail2ban fail2ban-firewalld
+
+# Servisi başlat
+sudo systemctl enable --now fail2ban
+```
+
+### 3.2 Nextcloud Jail
+
+```bash
+# Nextcloud filter oluştur
 sudo tee /etc/fail2ban/filter.d/nextcloud.conf << 'EOF'
 [Definition]
 _groupsre = (?:(?:,?\s*"\w+":(?:"[^"]+"|\w+))*)
@@ -112,57 +152,107 @@ failregex = ^\{%(_groupsre)s,?\s*"remoteAddr":"<HOST>"%(_groupsre)s,?\s*"message
 datepattern = ,?\s*"time"\s*:\s*"%%Y-%%m-%%d[T ]%%H:%%M:%%S(%%z)?"
 EOF
 
-# /etc/fail2ban/jail.d/nextcloud.conf
-sudo tee /etc/fail2ban/jail.d/nextcloud.conf << 'EOF'
+# Nextcloud jail oluştur
+sudo tee /etc/fail2ban/jail.d/nextcloud.local << 'EOF'
 [nextcloud]
 backend = auto
 enabled = true
-port = 80,443
+port = http,https
 protocol = tcp
 filter = nextcloud
 maxretry = 5
 bantime = 86400
 findtime = 600
 logpath = /mnt/nextcloud-data/nextcloud.log
-action = %(action_mwl)s
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
+banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
 EOF
 ```
 
-### 3.2 SSH Jail
+### 3.3 SSH Jail
 
 ```bash
-sudo tee /etc/fail2ban/jail.d/sshd.conf << 'EOF'
+sudo tee /etc/fail2ban/jail.d/sshd.local << 'EOF'
 [sshd]
 enabled = true
 port = ssh
 filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
 maxretry = 3
 bantime = 86400
 findtime = 600
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
 EOF
 ```
 
-### 3.3 Fail2ban Yönetimi
+### 3.4 Fail2ban Yönetimi
 
 ```bash
-# Restart
+# Servisi yeniden başlat
 sudo systemctl restart fail2ban
 
 # Durum kontrol
 sudo fail2ban-client status
 sudo fail2ban-client status nextcloud
+sudo fail2ban-client status sshd
 
 # Banlı IP'leri görüntüle
 sudo fail2ban-client status nextcloud | grep "Banned IP"
 
 # IP ban kaldırma
 sudo fail2ban-client set nextcloud unbanip 1.2.3.4
+
+# Logları izle
+sudo tail -f /var/log/fail2ban.log
 ```
 
-## 4️⃣ Nextcloud Güvenlik Ayarları
+## 4️⃣ SELinux Yapılandırması
 
-### 4.1 config.php Güvenlik Ayarları
+### 4.1 SELinux Durumu
+
+```bash
+# Durumu kontrol et
+getenforce
+sestatus
+
+# Enforcing modda olmalı (önerilen)
+sudo setenforce 1
+```
+
+### 4.2 Docker ve NFS için Boolean'lar
+
+```bash
+# Gerekli boolean'ları ayarla
+sudo setsebool -P container_use_nfs 1
+sudo setsebool -P httpd_use_nfs 1
+sudo setsebool -P httpd_can_network_connect 1
+sudo setsebool -P httpd_can_network_connect_db 1
+sudo setsebool -P container_manage_cgroup 1
+
+# Doğrula
+getsebool -a | grep -E "(container|httpd|nfs)"
+```
+
+### 4.3 SELinux Troubleshooting
+
+```bash
+# Audit loglarını kontrol et
+sudo ausearch -m avc -ts recent
+
+# Önerilen policy oluştur
+sudo ausearch -m avc -ts recent | audit2allow -M nextcloud_custom
+sudo semodule -i nextcloud_custom.pp
+
+# Geçici olarak permissive (sorun giderme için)
+# sudo setenforce 0
+
+# Kalıcı olarak permissive yapmak için (önerilmez):
+# sudo sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+```
+
+## 5️⃣ Nextcloud Güvenlik Ayarları
+
+### 5.1 config.php Güvenlik Ayarları
 
 ```php
 <?php
@@ -196,7 +286,7 @@ $CONFIG = array (
 );
 ```
 
-### 4.2 İki Faktörlü Kimlik Doğrulama (2FA)
+### 5.2 İki Faktörlü Kimlik Doğrulama (2FA)
 
 ```bash
 # TOTP uygulaması kur
@@ -206,7 +296,7 @@ docker exec -u www-data nextcloud php occ app:enable twofactor_totp
 docker exec -u www-data nextcloud php occ twofactorauth:enforce --on
 ```
 
-### 4.3 Güvenlik Taraması
+### 5.3 Güvenlik Taraması
 
 ```bash
 # Nextcloud güvenlik taraması
@@ -216,9 +306,9 @@ docker exec -u www-data nextcloud php occ security:certificates
 # https://scan.nextcloud.com
 ```
 
-## 5️⃣ TrueNAS Güvenliği
+## 6️⃣ TrueNAS Güvenliği
 
-### 5.1 NFS Güvenliği
+### 6.1 NFS Güvenliği
 
 ```yaml
 # TrueNAS NFS Share ayarları
@@ -233,7 +323,7 @@ Authorized Networks: 192.168.1.10/32
 Authorized Hosts: 192.168.1.10
 ```
 
-### 5.2 Web UI Güvenliği
+### 6.2 Web UI Güvenliği
 
 1. **System → General Settings**
    - HTTPS için self-signed veya CA certificate
@@ -243,7 +333,7 @@ Authorized Hosts: 192.168.1.10
    - Güçlü admin şifresi
    - Gereksiz kullanıcıları devre dışı bırak
 
-### 5.3 SSH Güvenliği
+### 6.3 SSH Güvenliği
 
 ```bash
 # SSH key-only authentication
@@ -252,9 +342,9 @@ PasswordAuthentication no
 PermitRootLogin prohibit-password
 ```
 
-## 6️⃣ Ağ Segmentasyonu
+## 7️⃣ Ağ Segmentasyonu
 
-### 6.1 VLAN Önerisi
+### 7.1 VLAN Önerisi
 
 ```
 VLAN 10 - Management (TrueNAS Web UI, SSH)
@@ -270,7 +360,22 @@ VLAN 30 - DMZ (Public access)
 └── Nextcloud Public IP
 ```
 
-### 6.2 Minimum Gerekli Portlar
+### 7.2 Firewalld Zone'ları ile Segmentasyon
+
+```bash
+# Farklı interface'ler için farklı zone'lar
+# Internal network (storage)
+sudo firewall-cmd --permanent --zone=internal --add-interface=eth1
+sudo firewall-cmd --permanent --zone=internal --add-service=nfs
+
+# Public network
+sudo firewall-cmd --permanent --zone=public --add-interface=eth0
+sudo firewall-cmd --permanent --zone=public --add-service=https
+
+sudo firewall-cmd --reload
+```
+
+### 7.3 Minimum Gerekli Portlar
 
 | Kaynak | Hedef | Port | Protokol | Açıklama |
 |--------|-------|------|----------|----------|
@@ -280,9 +385,9 @@ VLAN 30 - DMZ (Public access)
 | Admin | TrueNAS | 443 | TCP | Web UI |
 | Admin | Nextcloud | 22 | TCP | SSH |
 
-## 7️⃣ Audit ve Logging
+## 8️⃣ Audit ve Logging
 
-### 7.1 Nextcloud Audit Log
+### 8.1 Nextcloud Audit Log
 
 ```bash
 # Audit app aktifleştir
@@ -292,20 +397,21 @@ docker exec -u www-data nextcloud php occ app:enable admin_audit
 /mnt/nextcloud-data/audit.log
 ```
 
-### 7.2 Centralized Logging
+### 8.2 Centralized Logging (rsyslog)
 
 ```bash
-# rsyslog ile merkezi log
+# rsyslog yapılandırması
 sudo tee /etc/rsyslog.d/50-nextcloud.conf << 'EOF'
 # Nextcloud logs
 if $programname == 'nextcloud' then /var/log/nextcloud/nextcloud.log
 & stop
 EOF
 
+sudo mkdir -p /var/log/nextcloud
 sudo systemctl restart rsyslog
 ```
 
-### 7.3 Log Rotation
+### 8.3 Log Rotation
 
 ```bash
 sudo tee /etc/logrotate.d/nextcloud << 'EOF'
@@ -315,18 +421,18 @@ sudo tee /etc/logrotate.d/nextcloud << 'EOF'
     compress
     delaycompress
     notifempty
-    create 640 www-data www-data
+    create 640 33 33
     sharedscripts
     postrotate
-        docker exec nextcloud kill -USR1 1
+        docker exec nextcloud kill -USR1 1 2>/dev/null || true
     endscript
 }
 EOF
 ```
 
-## 8️⃣ Yedekleme Güvenliği
+## 9️⃣ Yedekleme Güvenliği
 
-### 8.1 Şifreli Yedek
+### 9.1 Şifreli Yedek
 
 ```bash
 # GPG ile şifreli yedek
@@ -336,9 +442,12 @@ gpg --symmetric --cipher-algo AES256 backup.tar.gz
 gpg --decrypt backup.tar.gz.gpg > backup.tar.gz
 ```
 
-### 8.2 Off-site Yedekleme
+### 9.2 Off-site Yedekleme
 
 ```bash
+# rclone kurulumu
+sudo dnf install -y rclone
+
 # rclone ile bulut yedekleme
 rclone copy /opt/nextcloud/backups remote:nextcloud-backups --crypt-remote
 ```
@@ -347,9 +456,10 @@ rclone copy /opt/nextcloud/backups remote:nextcloud-backups --crypt-remote
 
 ### Sistem
 - [ ] SSH key-only authentication
-- [ ] Firewall (UFW) aktif
+- [ ] Firewalld aktif ve yapılandırılmış
 - [ ] Fail2ban yapılandırılmış
-- [ ] Otomatik güvenlik güncellemeleri aktif
+- [ ] SELinux enforcing modda
+- [ ] Otomatik güvenlik güncellemeleri aktif (`dnf-automatic`)
 - [ ] Gereksiz servisler kapalı
 
 ### Nextcloud

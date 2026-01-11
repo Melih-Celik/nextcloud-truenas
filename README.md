@@ -27,7 +27,7 @@
 │  NEXTCLOUD SERVER │   │  TRUENAS SERVER   │   │   CLIENT'LAR      │
 │  192.168.1.10     │   │  192.168.1.20     │   │                   │
 ├───────────────────┤   ├───────────────────┤   │  • Windows PC     │
-│  • Ubuntu 24.04   │   │  • TrueNAS SCALE  │   │  • macOS          │
+│  • AlmaLinux 10   │   │  • TrueNAS SCALE  │   │  • macOS          │
 │  • Docker         │   │  • ZFS Storage    │   │  • iPhone/Android │
 │  • Nginx          │   │  • NFS Server     │   │  • Linux          │
 │  • Nextcloud      │◄──┤  • 60TB Pool      │   │                   │
@@ -64,7 +64,7 @@ nextcloud-truenas/
 ├── README.md                      # Bu dosya
 ├── docs/
 │   ├── 01-truenas-setup.md       # TrueNAS kurulum rehberi
-│   ├── 02-nextcloud-setup.md     # Nextcloud kurulum rehberi
+│   ├── 02-nextcloud-setup.md     # Nextcloud kurulum rehberi (AlmaLinux 10)
 │   ├── 03-security-hardening.md  # Güvenlik yapılandırması
 │   ├── 04-performance-tuning.md  # Performans optimizasyonu
 │   └── 05-maintenance.md         # Bakım prosedürleri
@@ -79,7 +79,7 @@ nextcloud-truenas/
 │       └── redis/
 │           └── redis.conf        # Redis yapılandırması
 ├── scripts/
-│   ├── 01-prepare-host.sh        # Host hazırlık scripti
+│   ├── 01-prepare-host.sh        # AlmaLinux host hazırlık scripti
 │   ├── 02-mount-nfs.sh           # NFS mount scripti
 │   ├── 03-deploy.sh              # Deployment scripti
 │   ├── backup.sh                 # Yedekleme scripti
@@ -93,7 +93,7 @@ nextcloud-truenas/
 ### 1. TrueNAS Kurulumu
 [TrueNAS Kurulum Rehberi](docs/01-truenas-setup.md)
 
-### 2. Nextcloud Sunucusu Hazırlığı
+### 2. Nextcloud Sunucusu Hazırlığı (AlmaLinux 10)
 ```bash
 # Host'u hazırla
 sudo ./scripts/01-prepare-host.sh
@@ -128,7 +128,8 @@ nano docker/.env
 
 - ✅ TLS 1.3 ile HTTPS
 - ✅ Fail2ban brute-force koruması
-- ✅ UFW firewall
+- ✅ Firewalld yapılandırması
+- ✅ SELinux desteği
 - ✅ 2FA desteği
 - ✅ Şifreli veri transferi (NFS over TLS opsiyonel)
 
@@ -139,4 +140,5 @@ Herhangi bir sorun için issue açın veya dokümantasyonu inceleyin.
 ---
 
 **Versiyon:** 1.0.0  
-**Son Güncelleme:** Ocak 2026
+**Son Güncelleme:** Ocak 2026  
+**Platform:** AlmaLinux 10

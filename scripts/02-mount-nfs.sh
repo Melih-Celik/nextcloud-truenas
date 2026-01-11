@@ -3,6 +3,7 @@
 # NFS Mount Script for TrueNAS Integration
 # ==================================================
 # This script mounts NFS shares from TrueNAS
+# Platform: AlmaLinux 10
 # Run as: sudo ./02-mount-nfs.sh
 # ==================================================
 
@@ -16,6 +17,7 @@ NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  NFS Mount Configuration Script       ${NC}"
+echo -e "${GREEN}  Platform: AlmaLinux 10               ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 # Check if running as root
@@ -39,19 +41,38 @@ NFS_OPTS="rw,hard,intr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev"
 # ==================================================
 # 1. Check NFS Client
 # ==================================================
-echo -e "\n${YELLOW}[1/5] Checking NFS client...${NC}"
+echo -e "\n${YELLOW}[1/6] Checking NFS client...${NC}"
 
-if ! command -v showmount &> /dev/null; then
-    echo "Installing nfs-common..."
-    apt install -y nfs-common
+if ! rpm -q nfs-utils &> /dev/null; then
+    echo "Installing nfs-utils..."
+    dnf install -y nfs-utils
 fi
 
-echo -e "${GREEN}NFS client is installed${NC}"
+# Ensure services are running
+systemctl enable --now nfs-client.target
+systemctl enable --now rpcbind
+
+echo -e "${GREEN}NFS client is installed and running${NC}"
 
 # ==================================================
-# 2. Test TrueNAS Connection
+# 2. Check SELinux
 # ==================================================
-echo -e "\n${YELLOW}[2/5] Testing TrueNAS connection...${NC}"
+echo -e "\n${YELLOW}[2/6] Checking SELinux configuration...${NC}"
+
+# Set SELinux booleans for NFS
+setsebool -P container_use_nfs 1 2>/dev/null || true
+setsebool -P httpd_use_nfs 1 2>/dev/null || true
+
+if getenforce | grep -q "Enforcing"; then
+    echo -e "${GREEN}SELinux is enforcing - NFS booleans configured${NC}"
+else
+    echo -e "${YELLOW}SELinux is not enforcing${NC}"
+fi
+
+# ==================================================
+# 3. Test TrueNAS Connection
+# ==================================================
+echo -e "\n${YELLOW}[3/6] Testing TrueNAS connection...${NC}"
 
 if ! ping -c 1 -W 2 $TRUENAS_IP &> /dev/null; then
     echo -e "${RED}Cannot reach TrueNAS at $TRUENAS_IP${NC}"
@@ -65,9 +86,9 @@ fi
 echo -e "${GREEN}TrueNAS is reachable at $TRUENAS_IP${NC}"
 
 # ==================================================
-# 3. Check NFS Exports
+# 4. Check NFS Exports
 # ==================================================
-echo -e "\n${YELLOW}[3/5] Checking NFS exports on TrueNAS...${NC}"
+echo -e "\n${YELLOW}[4/6] Checking NFS exports on TrueNAS...${NC}"
 
 echo "Available exports from $TRUENAS_IP:"
 if ! showmount -e $TRUENAS_IP; then
@@ -80,15 +101,15 @@ if ! showmount -e $TRUENAS_IP; then
 fi
 
 # ==================================================
-# 4. Create Mount Points
+# 5. Create Mount Points and Test
 # ==================================================
-echo -e "\n${YELLOW}[4/5] Setting up mount points...${NC}"
+echo -e "\n${YELLOW}[5/6] Setting up mount points...${NC}"
 
 # Create mount directories
 mkdir -p $DATA_MOUNT
 mkdir -p $CONFIG_MOUNT
 
-# Test mount
+# Test mount for data
 echo "Testing mount for data directory..."
 if mount -t nfs4 $TRUENAS_IP:$DATA_EXPORT $DATA_MOUNT -o $NFS_OPTS; then
     echo -e "${GREEN}Data mount successful!${NC}"
@@ -108,6 +129,7 @@ else
     exit 1
 fi
 
+# Test mount for config
 echo "Testing mount for config directory..."
 if mount -t nfs4 $TRUENAS_IP:$CONFIG_EXPORT $CONFIG_MOUNT -o $NFS_OPTS; then
     echo -e "${GREEN}Config mount successful!${NC}"
@@ -118,9 +140,9 @@ else
 fi
 
 # ==================================================
-# 5. Configure /etc/fstab
+# 6. Configure /etc/fstab
 # ==================================================
-echo -e "\n${YELLOW}[5/5] Configuring /etc/fstab...${NC}"
+echo -e "\n${YELLOW}[6/6] Configuring /etc/fstab...${NC}"
 
 # Backup fstab
 cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d%H%M%S)

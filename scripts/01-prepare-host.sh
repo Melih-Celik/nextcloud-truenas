@@ -96,6 +96,17 @@ if [ -n "$SUDO_USER" ]; then
 fi
 
 # ==================================================
+# 3b. Configure SELinux for Containers (after Docker install)
+# ==================================================
+echo -e "\n${YELLOW}[3b/9] Configuring SELinux for containers...${NC}"
+
+# Now that container-selinux is installed with Docker, set container booleans
+setsebool -P container_use_nfs 1 2>/dev/null || echo "  container_use_nfs not available"
+setsebool -P container_manage_cgroup 1 2>/dev/null || echo "  container_manage_cgroup not available"
+
+echo -e "${GREEN}SELinux container booleans configured${NC}"
+
+# ==================================================
 # 4. Create Directory Structure
 # ==================================================
 echo -e "\n${YELLOW}[4/9] Creating directory structure...${NC}"
@@ -118,19 +129,17 @@ echo "  /mnt/nextcloud-config"
 echo "  /opt/nextcloud"
 
 # ==================================================
-# 5. Configure SELinux
+# 5. Configure SELinux (Basic - NFS related)
 # ==================================================
 echo -e "\n${YELLOW}[5/9] Configuring SELinux...${NC}"
 
-# Set SELinux booleans for NFS and containers
-setsebool -P container_use_nfs 1
-setsebool -P httpd_use_nfs 1
-setsebool -P httpd_can_network_connect 1
-setsebool -P httpd_can_network_connect_db 1
-setsebool -P container_manage_cgroup 1
+# Set SELinux booleans for NFS (container booleans will be set after Docker install)
+setsebool -P httpd_use_nfs 1 2>/dev/null || echo "  httpd_use_nfs not available"
+setsebool -P httpd_can_network_connect 1 2>/dev/null || echo "  httpd_can_network_connect not available"
+setsebool -P httpd_can_network_connect_db 1 2>/dev/null || echo "  httpd_can_network_connect_db not available"
+setsebool -P virt_use_nfs 1 2>/dev/null || echo "  virt_use_nfs not available"
 
-echo -e "${GREEN}SELinux booleans configured${NC}"
-getsebool container_use_nfs httpd_use_nfs httpd_can_network_connect
+echo -e "${GREEN}SELinux NFS booleans configured${NC}"
 
 # ==================================================
 # 6. Configure Firewall (firewalld)

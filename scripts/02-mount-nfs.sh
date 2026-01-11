@@ -59,14 +59,17 @@ echo -e "${GREEN}NFS client is installed and running${NC}"
 # ==================================================
 echo -e "\n${YELLOW}[2/6] Checking SELinux configuration...${NC}"
 
-# Set SELinux booleans for NFS
+# Set SELinux booleans for NFS (ignore errors if not available)
 setsebool -P container_use_nfs 1 2>/dev/null || true
 setsebool -P httpd_use_nfs 1 2>/dev/null || true
+setsebool -P virt_use_nfs 1 2>/dev/null || true
 
-if getenforce | grep -q "Enforcing"; then
+if getenforce 2>/dev/null | grep -q "Enforcing"; then
     echo -e "${GREEN}SELinux is enforcing - NFS booleans configured${NC}"
+elif getenforce 2>/dev/null | grep -q "Permissive"; then
+    echo -e "${YELLOW}SELinux is permissive${NC}"
 else
-    echo -e "${YELLOW}SELinux is not enforcing${NC}"
+    echo -e "${YELLOW}SELinux status unknown or disabled${NC}"
 fi
 
 # ==================================================

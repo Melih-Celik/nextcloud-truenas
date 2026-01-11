@@ -150,15 +150,52 @@ echo -e "\n${YELLOW}[4/8] Setting permissions...${NC}"
 WWW_DATA_UID=33
 WWW_DATA_GID=33
 
-# Set ownership on NFS mounts (should match TrueNAS settings)
-sudo chown -R $WWW_DATA_UID:$WWW_DATA_GID /mnt/nextcloud-data
-sudo chown -R $WWW_DATA_UID:$WWW_DATA_GID /mnt/nextcloud-config
-sudo chmod -R 770 /mnt/nextcloud-data
-sudo chmod -R 770 /mnt/nextcloud-config
+# NFS mounts: ownership must be set on TrueNAS, not here
+# Check if we can write to NFS mounts
+NFS_PERMISSION_OK=true
+
+if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
+    NFS_PERMISSION_OK=false
+    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-data as www-data (UID 33)${NC}"
+else
+    rm -f /mnt/nextcloud-data/.write_test
+    echo "  NFS data mount: writable"
+fi
+
+if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-config/.write_test 2>/dev/null; then
+    NFS_PERMISSION_OK=false
+    echo -e "${YELLOW}WARNING: Cannot write to /mnt/nextcloud-config as www-data (UID 33)${NC}"
+else
+    rm -f /mnt/nextcloud-config/.write_test
+    echo "  NFS config mount: writable"
+fi
+
+if [ "$NFS_PERMISSION_OK" = false ]; then
+    echo ""
+    echo -e "${YELLOW}NFS permissions need to be set on TrueNAS:${NC}"
+    echo "  1. Open TrueNAS Web UI"
+    echo "  2. Go to Datasets > nextcloud/data > Edit Permissions"
+    echo "  3. Set User: 33, Group: 33 (or create www-data user with UID 33)"
+    echo "  4. Apply recursively"
+    echo "  5. Do the same for nextcloud/config dataset"
+    echo ""
+    echo -e "${YELLOW}Or run these commands on TrueNAS shell:${NC}"
+    echo "  chown -R 33:33 /mnt/storage/nextcloud/data"
+    echo "  chown -R 33:33 /mnt/storage/nextcloud/config"
+    echo ""
+    read -p "Press Enter after fixing TrueNAS permissions (or Ctrl+C to exit)..."
+    
+    # Re-check after user confirmation
+    if ! sudo -u \#${WWW_DATA_UID} touch /mnt/nextcloud-data/.write_test 2>/dev/null; then
+        echo -e "${RED}Still cannot write to NFS mounts. Please fix permissions and try again.${NC}"
+        exit 1
+    fi
+    rm -f /mnt/nextcloud-data/.write_test
+fi
 
 # Set ownership on local directories
-sudo chown -R $WWW_DATA_UID:$WWW_DATA_GID db-data 2>/dev/null || true
-sudo chown -R $WWW_DATA_UID:$WWW_DATA_GID redis-data 2>/dev/null || true
+chown -R $WWW_DATA_UID:$WWW_DATA_GID db-data 2>/dev/null || true
+chown -R $WWW_DATA_UID:$WWW_DATA_GID redis-data 2>/dev/null || true
 
 echo -e "${GREEN}Permissions set${NC}"
 

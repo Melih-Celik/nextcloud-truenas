@@ -31,9 +31,7 @@ fi
 # ==================================================
 TRUENAS_IP="${TRUENAS_IP:-192.168.1.20}"
 DATA_EXPORT="/mnt/storage/nextcloud/data"
-CONFIG_EXPORT="/mnt/storage/nextcloud/config"
 DATA_MOUNT="/mnt/nextcloud-data"
-CONFIG_MOUNT="/mnt/nextcloud-config"
 
 # NFS Mount Options (optimized for performance)
 NFS_OPTS="rw,hard,intr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev"
@@ -41,7 +39,7 @@ NFS_OPTS="rw,hard,intr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev"
 # ==================================================
 # 1. Check NFS Client
 # ==================================================
-echo -e "\n${YELLOW}[1/6] Checking NFS client...${NC}"
+echo -e "\n${YELLOW}[1/5] Checking NFS client...${NC}"
 
 if ! rpm -q nfs-utils &> /dev/null; then
     echo "Installing nfs-utils..."
@@ -57,7 +55,7 @@ echo -e "${GREEN}NFS client is installed and running${NC}"
 # ==================================================
 # 2. Check SELinux
 # ==================================================
-echo -e "\n${YELLOW}[2/6] Checking SELinux configuration...${NC}"
+echo -e "\n${YELLOW}[2/5] Checking SELinux configuration...${NC}"
 
 # Set SELinux booleans for NFS (ignore errors if not available)
 setsebool -P container_use_nfs 1 2>/dev/null || true
@@ -75,7 +73,7 @@ fi
 # ==================================================
 # 3. Test TrueNAS Connection
 # ==================================================
-echo -e "\n${YELLOW}[3/6] Testing TrueNAS connection...${NC}"
+echo -e "\n${YELLOW}[3/5] Testing TrueNAS connection...${NC}"
 
 if ! ping -c 1 -W 2 $TRUENAS_IP &> /dev/null; then
     echo -e "${RED}Cannot reach TrueNAS at $TRUENAS_IP${NC}"
@@ -91,7 +89,7 @@ echo -e "${GREEN}TrueNAS is reachable at $TRUENAS_IP${NC}"
 # ==================================================
 # 4. Check NFS Exports
 # ==================================================
-echo -e "\n${YELLOW}[4/6] Checking NFS exports on TrueNAS...${NC}"
+echo -e "\n${YELLOW}[4/5] Checking NFS exports on TrueNAS...${NC}"
 
 echo "Available exports from $TRUENAS_IP:"
 if ! showmount -e $TRUENAS_IP; then
@@ -106,11 +104,10 @@ fi
 # ==================================================
 # 5. Create Mount Points and Test
 # ==================================================
-echo -e "\n${YELLOW}[5/6] Setting up mount points...${NC}"
+echo -e "\n${YELLOW}[5/5] Setting up mount points and fstab...${NC}"
 
-# Create mount directories
+# Create mount directory
 mkdir -p $DATA_MOUNT
-mkdir -p $CONFIG_MOUNT
 
 # Test mount for data
 echo "Testing mount for data directory..."
@@ -132,39 +129,16 @@ else
     exit 1
 fi
 
-# Test mount for config
-echo "Testing mount for config directory..."
-if mount -t nfs4 $TRUENAS_IP:$CONFIG_EXPORT $CONFIG_MOUNT -o $NFS_OPTS; then
-    echo -e "${GREEN}Config mount successful!${NC}"
-    umount $CONFIG_MOUNT
-else
-    echo -e "${RED}Failed to mount config directory${NC}"
-    exit 1
-fi
-
-# ==================================================
-# 6. Configure /etc/fstab
-# ==================================================
-echo -e "\n${YELLOW}[6/6] Configuring /etc/fstab...${NC}"
-
 # Backup fstab
 cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d%H%M%S)
 
-# Check if entries already exist
+# Check if entry already exists
 if grep -q "$DATA_MOUNT" /etc/fstab; then
     echo -e "${YELLOW}Data mount entry already exists in fstab, skipping...${NC}"
 else
     echo "# Nextcloud Data - TrueNAS NFS" >> /etc/fstab
     echo "$TRUENAS_IP:$DATA_EXPORT    $DATA_MOUNT    nfs4    $NFS_OPTS    0    0" >> /etc/fstab
     echo -e "${GREEN}Added data mount to fstab${NC}"
-fi
-
-if grep -q "$CONFIG_MOUNT" /etc/fstab; then
-    echo -e "${YELLOW}Config mount entry already exists in fstab, skipping...${NC}"
-else
-    echo "# Nextcloud Config - TrueNAS NFS" >> /etc/fstab
-    echo "$TRUENAS_IP:$CONFIG_EXPORT    $CONFIG_MOUNT    nfs4    $NFS_OPTS    0    0" >> /etc/fstab
-    echo -e "${GREEN}Added config mount to fstab${NC}"
 fi
 
 # Mount all
@@ -182,10 +156,9 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}  NFS Mount Configuration Complete!    ${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Mount points:"
-echo "  Data:   $DATA_MOUNT"
-echo "  Config: $CONFIG_MOUNT"
+echo "Mount point:"
+echo "  Data: $DATA_MOUNT"
 echo ""
-echo "fstab entries added. Mounts will persist after reboot."
+echo "fstab entry added. Mount will persist after reboot."
 echo ""
 echo "Next step: Deploy Nextcloud with ./03-deploy.sh"

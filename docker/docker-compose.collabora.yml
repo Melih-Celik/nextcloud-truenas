@@ -70,9 +70,12 @@ services:
       - nextcloud-network
     cap_add:
       - MKNOD
-      - SYS_ADMIN
+    tmpfs:
+      # systemplate için tmpfs mount - performans ve güncellik sorunlarını çözer
+      - /opt/cool/systemplate:rw,size=100M
     security_opt:
       - seccomp:unconfined
+      - apparmor:unconfined
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9980/hosting/discovery"]
       interval: 30s
